@@ -1,0 +1,69 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+.env
+.env.*
+!.env.example
+runtime/
+
+code/backend/data/
+
+# Local environment files (keep sanitized configuration examples)
+*.env
+*.env.*
+!*.env.example
+!.env.*.example
+
+# Credentials and private keys
+*.pem
+*.key
+*.p12
+*.pfx
+.secrets/
+
+# Local databases, backups, and process output
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite*-journal
+*.sqlite*-wal
+*.sqlite*-shm
+*.log
+*.pid
+
+# JavaScript dependencies and generated test output
+node_modules/
+coverage/
+.coverage
+.coverage.*
+htmlcov/
+playwright-report/
+test-results/
+.playwright-mcp/
+
+# Local acceptance records and screenshots contain real work information.
+# Executable tests in code/backend/tests remain versioned.
+/docs/testing/
+/docs/prototype/*.png
+
+# One-off local migration helper embeds the authorized server address.
+/code/scripts/transfer_sqlite.py
+
+# Editor and operating-system files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini

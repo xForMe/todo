@@ -67,11 +67,3 @@ body:
         - [ ] ……
     validations:
       required: true
-
-  - type: checkboxes
-    id: safety
-    attributes:
-      label: 提交前确认
-      options:
-        - label: 这个请求不要求提交凭据、真实业务数据或绕过飞书及模型服务权限
-          required: true

@@ -642,6 +642,28 @@ dialog {
 dialog[open] {
   animation:drawer-in .18s ease-out
 }
+#deleteDrawer {
+  inset:0;
+  margin:auto;
+  width:min(var(--confirmation-width), calc(100% - var(--space-8)));
+  height:fit-content;
+  max-height:calc(100dvh - var(--space-8));
+  padding:var(--space-6);
+  border:1px solid var(--line);
+  border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-sm);
+  animation:none;
+  scroll-padding-bottom:0
+}
+#deleteDrawer .actions {
+  position:static;
+  margin-top:var(--space-5);
+  padding:0;
+  border:0
+}
+#deleteDrawer p:empty {
+  display:none
+}
 dialog::backdrop {
   background:var(--backdrop)
 }

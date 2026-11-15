@@ -10,7 +10,7 @@ from todo_backend.modules.sources.discarding import discard_message
 from todo_backend.modules.sources.follow import RuleInput, list_rules, save_rule
 from todo_backend.modules.sources.placement import Placement
 from todo_backend.modules.sources.recognition import resolve_proposal
-from todo_backend.modules.sources.recovery import retry_message, unmatched_messages
+from todo_backend.modules.sources.recovery import manual_message, retry_message, unmatched_messages
 from todo_backend.modules.sources.repository import read_sources, sources, suggestions
 from todo_backend.modules.sources.schemas import SourceInput
 from todo_backend.modules.sources.service import save_source
@@ -62,6 +62,23 @@ def retry_recognition(data: RetryMessage, request: Request, identity: Identity) 
             data.expected_version,
         )
         return {"status": status}
+    except WorkError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
+
+
+@router.post("/manual-message")
+def prepare_manual(data: RetryMessage, request: Request, identity: Identity) -> dict[str, str]:
+    """Prepare a user-requested draft; formal work still needs confirmation."""
+    try:
+        return {
+            "suggestion_id": manual_message(
+                request.app.state.engine,
+                identity,
+                data.source_id,
+                data.message_id,
+                data.expected_version,
+            )
+        }
     except WorkError as exc:
         raise HTTPException(exc.status, exc.message) from exc
 

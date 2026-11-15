@@ -56,7 +56,7 @@ function renderChatResults() {
   recognitionEntry.classList.toggle('hasError', Boolean(aiError));
   let html = '';
   if (recoveryError) html += `<p class="error" role="alert">${esc(recoveryError)}</p>`;
-  if (retryBusy) html += '<p role="status">正在重新识别，请稍候…</p>';
+  if (retryBusy) html += '<p role="status">正在处理，请稍候…</p>';
   if (aiError) {
     html += `<p class="chatScope error" role="alert">识别结果读取失败：${esc(aiError)}。请刷新重试。</p>`;
   } else if (!aiLoaded) {
@@ -64,7 +64,7 @@ function renderChatResults() {
   } else {
     html += `<div class="wbTabs" aria-label="事件识别状态">${[['pending','待确认'],['linked','已关联进展'],['unmatched','未找到建议']].map(([state,label]) => `<button aria-pressed="${state === chatResultState}" class="${state === chatResultState ? 'active' : ''}" onclick="chatResultState='${state}';chatResultPage=0;renderChatResults()">${label} <span>${state === 'unmatched' ? unmatchedMessages.length : rows.filter(s => s.state === state).length}</span></button>`).join('')}</div>`;
     if (chatResultState === 'unmatched') {
-      html += unmatchedMessages.map((m,i) => `<article class="wbRow chatResult"><div class="chatResultHead"><strong>${esc(m.content)}</strong><div class="chatActions">${recognitionIcon('重新识别此条', recognitionRefreshPath, `retryUnmatched(${i})`, !m.can_retry||retryBusy)}${recognitionIcon('废弃', 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7', `discardUnmatched(${i})`, retryBusy, true)}</div></div><p>${m.processed?'已处理，但未找到对应建议':'等待处理'}${!m.can_retry?' · 重新识别需来源启用、AI授权且已完成首次处理':''}</p></article>`).join('') || '<p>当前页没有未匹配消息</p>';
+      html += unmatchedMessages.map((m,i) => `<article class="wbRow chatResult unmatchedRow"><div class="chatResultHead"><div class="unmatchedContent"><strong title="${esc(m.content)}">${esc(m.content)}</strong><p class="unmatchedState">${m.processed?'未提取行动':'等待识别'}${!m.can_retry?` · <span title="${esc(m.retry_block_reason||'来源暂不可用')}；可手动整理">识别不可用</span>`:''}</p></div><div class="chatActions">${recognitionIcon('手动整理', 'M16 3l5 5L9 20l-6 1 1-6L16 3M13 6l5 5', `manualUnmatched(${i})`, retryBusy)}${recognitionIcon('重新识别此条', recognitionRefreshPath, `retryUnmatched(${i})`, !m.can_retry||retryBusy)}${recognitionIcon('废弃', 'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7', `discardUnmatched(${i})`, retryBusy, true)}</div></div></article>`).join('') || '<p>当前页没有未匹配消息</p>';
     } else html += list.slice(chatResultPage * 10, (chatResultPage + 1) * 10).map(s => {
       const p = JSON.parse(s.body), path = wbPath(wbGet(s.thing_id));
       return `<article class="wbRow chatResult"><div><strong>${esc(p.name)}</strong><p class="wbPath">${esc(path ? path.text : '归属待确认')}</p><details><summary>原文依据</summary><p>${esc(p.evidence || '暂无依据')}</p></details></div><div class="chatActions">${s.state === 'pending' ? `<button class="primary" onclick="reviewChatResult('${s.id}')">核对建议</button>` : ''}${path ? `<button onclick="locateChatResult('${s.thing_id}')">定位事情</button>` : ''}</div></article>`;
@@ -78,6 +78,22 @@ async function loadUnmatched() {
   try { unmatchedMessages = await api('/sources/unmatched'); recoveryError = ''; }
   catch (e) { recoveryError = '消息核对暂不可用：'+e.message; unmatchedMessages = []; }
   renderChatResults();
+}
+async function manualUnmatched(index) {
+  const m = unmatchedMessages[index];
+  if (!m || retryBusy || suggestionBusy) return;
+  retryBusy = true; renderChatResults();
+  try {
+    const result = await api('/sources/manual-message','POST',{source_id:m.source_id,message_id:m.message_id,expected_version:m.version});
+    await refreshSuggestions();
+    const draft = aiSuggestions.find(s => s.id === result.suggestion_id);
+    if (!draft) throw Error('草稿已提交，请刷新待确认列表核对');
+    chatReviewOrigin = recognitionDrawer.open;
+    recognitionDrawer.close();
+    openSuggestion(draft);
+    $('#suggestionRecommendation').textContent = '手动整理：请编辑事件名称并选择归属，确认后才保存为正式事件。';
+  } catch (e) { recoveryError = e.message+'；未自动重试，可从待确认列表核对草稿。'; }
+  finally { retryBusy = false; renderChatResults(); }
 }
 async function discardUnmatched(index) {
   const m = unmatchedMessages[index];

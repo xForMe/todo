@@ -2,10 +2,12 @@
 
 import json
 import time
+from uuid import NAMESPACE_URL, uuid5
 
-from sqlalchemy import select, update
+from sqlalchemy import insert, select, update
 from sqlalchemy.engine import Engine
 
+from todo_backend.integrations.ai.client import Proposal
 from todo_backend.modules.sources.discarding import discard_key
 from todo_backend.modules.sources.message_receipts import chat_messages, receipts
 from todo_backend.modules.sources.recognition import analyze_source
@@ -66,6 +68,17 @@ def unmatched_messages(engine: Engine, account: str) -> list[dict[str, object]]:
                         "version": src["version"],
                         "content": content,
                         "processed": mid in done,
+                        "retry_block_reason": (
+                            str(src["status"])
+                            if not src["enabled"]
+                            else "未授权 AI 识别"
+                            if not src["ai_consent"]
+                            else "等待首次识别"
+                            if mid not in done
+                            else "识别进行中"
+                            if src["status"] == "单条消息重新识别中"
+                            else ""
+                        ),
                         "can_retry": bool(
                             src["enabled"]
                             and src["ai_consent"]
@@ -75,6 +88,97 @@ def unmatched_messages(engine: Engine, account: str) -> list[dict[str, object]]:
                     }
                 )
     return result
+
+
+def manual_message(engine: Engine, account: str, sid: str, mid: str, version: int) -> str:
+    """Prepare an editable draft without a model call, even when reading is paused."""
+    with engine.begin() as conn:
+        src = (
+            conn.execute(
+                select(sources).where(
+                    sources.c.id == sid,
+                    sources.c.account == account,
+                    sources.c.kind == "chat",
+                    sources.c.removed.is_(False),
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if src is None:
+            raise WorkError(404, "来源不存在或已移除")
+        identifier = str(uuid5(NAMESPACE_URL, f"todo:manual:{account}:{src['address']}:{mid}"))
+        existing = conn.execute(
+            select(suggestions.c.id).where(
+                suggestions.c.id == identifier,
+                suggestions.c.account == account,
+            )
+        ).scalar_one_or_none()
+        if existing:
+            return str(existing)
+        messages = chat_messages(str(src["content"]))
+        known = set(
+            conn.execute(
+                select(receipts.c.message_id).where(
+                    receipts.c.account == account,
+                    receipts.c.address == src["address"],
+                )
+            ).scalars()
+        )
+        if src["version"] != version or mid not in messages or discard_key(mid) in known:
+            raise WorkError(409, "消息已变化或已废弃，请刷新核对")
+        message = json.loads(messages[mid])
+        content = message.get("content", "")
+        if not isinstance(content, str) or not content.strip() or message.get("deleted"):
+            raise WorkError(422, "这条消息没有可整理的文字")
+        if len(content) > 2000:
+            raise WorkError(422, "原文超过当前整理上限，请先通过手动新建处理")
+        history = conn.execute(
+            select(suggestions.c.body)
+            .join(sources, sources.c.id == suggestions.c.source_id)
+            .where(
+                suggestions.c.account == account,
+                sources.c.account == account,
+                sources.c.address == src["address"],
+            )
+        ).scalars()
+        if any(json.loads(body)["evidence"] in messages[mid] for body in history):
+            raise WorkError(409, "这条消息已有建议，请刷新核对")
+        claimed = conn.execute(
+            update(sources)
+            .where(
+                sources.c.id == sid,
+                sources.c.version == version,
+            )
+            .values(version=version + 1)
+        )
+        if claimed.rowcount != 1:
+            raise WorkError(409, "来源已变化，请刷新核对")
+        proposal = Proposal(action="new", thing_id="", name=content.strip()[:120], evidence=content)
+        conn.execute(
+            insert(suggestions).values(
+                id=identifier,
+                account=account,
+                source_id=sid,
+                thing_id="",
+                action="new",
+                body=proposal.model_dump_json(),
+                state="pending",
+            )
+        )
+        if mid not in known:
+            conn.execute(
+                insert(receipts).values(account=account, address=src["address"], message_id=mid)
+            )
+    with engine.connect() as conn:
+        return str(
+            conn.execute(
+                select(suggestions.c.id).where(
+                    suggestions.c.id == identifier,
+                    suggestions.c.account == account,
+                )
+            ).scalar_one()
+        )
 
 
 def retry_message(engine: Engine, account: str, sid: str, mid: str, version: int) -> str:

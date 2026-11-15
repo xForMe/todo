@@ -1042,3 +1042,38 @@ dialog .actions {
 }
 }
 
+
+/* SRC-UI-009: compact matter navigation; keep detail panels and data unchanged. */
+#workPage .workspace > .panel:first-child > .panelHead { padding:var(--space-2) var(--space-3); gap:var(--space-2); }
+#workPage .workspace > .panel:first-child > .panelHead button { width:calc(var(--space-8) + var(--space-1)); min-width:calc(var(--space-8) + var(--space-1)); height:calc(var(--space-8) + var(--space-1)); min-height:calc(var(--space-8) + var(--space-1)); padding:var(--space-2); }
+#workPage #priorityNotice { margin:0; padding:var(--space-2) var(--space-3); gap:var(--space-2); border-bottom:1px solid var(--line); }
+#workPage #things { padding:var(--space-2); }
+#workPage #things .priorityTags { margin:0; padding:var(--space-1) var(--space-2); gap:var(--space-1); }
+#workPage #things .wbWatch { width:var(--space-8); height:var(--space-8); min-height:var(--space-8); padding:var(--space-1); }
+#workPage #things .thing { padding:var(--space-3); margin-bottom:var(--space-1); }
+#workPage #things .thing:last-child { margin-bottom:0; }
+#workPage #things .cardTitle { align-items:start; gap:var(--space-2); }
+#workPage #things .cardTitle strong { font-size:var(--text-sm); line-height:1.5; }
+#workPage #things .cardMeta { margin-top:var(--space-2); grid-template-columns:76px minmax(0,1fr); column-gap:var(--space-2); row-gap:var(--space-1); line-height:1.5; }
+#workPage #things .thing p { margin:var(--space-1) 0 var(--space-2); line-height:1.5; }
+
+/* SRC-UI-010: compact current-matter summary, preserving event table controls. */
+#workPage #events > .panelHead { padding:var(--space-2) var(--space-3); gap:var(--space-2); }
+#workPage #events > .panelHead button { width:calc(var(--space-8) + var(--space-1)); min-width:calc(var(--space-8) + var(--space-1)); height:calc(var(--space-8) + var(--space-1)); min-height:calc(var(--space-8) + var(--space-1)); padding:var(--space-2); }
+#workPage #events > .detail { padding:var(--space-4); }
+#workPage #events .detailTitle { display:grid; grid-template-columns:minmax(0,1fr) repeat(3,36px); align-items:start; gap:var(--space-2); }
+#workPage #events .detailTitle h1 { font-size:var(--text-lg); line-height:1.4; margin:0; text-wrap:wrap; }
+#workPage #events .detailTitle p { margin-top:var(--space-1); font-size:var(--text-xs); line-height:1.5; }
+#workPage #events .detailTitle > button,#workPage #events .detailTitle .wbWatch { width:36px; min-width:36px; height:36px; min-height:36px; padding:var(--space-2); }
+#workPage #events .detailTitle .wbWatchSlot { margin:0; }
+#workPage #events .facts { grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--space-2) var(--space-4); margin-top:var(--space-3); padding-top:var(--space-3); }
+#workPage #events .facts > div { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-1) var(--space-2); min-width:0; }
+#workPage #events .facts label { margin:0; line-height:1.5; flex-shrink:0; }
+#workPage #events .facts strong { font-size:var(--text-sm); line-height:1.5; min-width:0; }
+#workPage #events .progressSummary { padding:var(--space-2) var(--space-3); }
+#workPage #events .tableWrap { padding:0 var(--space-3) var(--space-3); }
+#workPage #events th { padding:var(--space-3) var(--space-2); }
+@media(max-width:600px) {
+  #workPage #events .facts { grid-template-columns:1fr; }
+  #workPage #events > .detail { padding:var(--space-3); }
+}

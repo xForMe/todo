@@ -20,12 +20,17 @@ fs.mkdirSync(output, {recursive:true});
         const endpoint = url.pathname.slice(4);
         if(route.request().method() !== 'GET') {
           writes++;
+          if(endpoint === '/sources/manual-message') {
+            suggestions=[{id:'manual',source_kind:'chat',source_id:'src',thing_id:'',state:'pending',action:'new',body:JSON.stringify({...proposal,name:'手动原文',thing_id:''})}];
+            unmatched=[];
+            return route.fulfill({json:{suggestion_id:'manual'}});
+          }
           if(endpoint === '/sources/discard-message') {
             assert.equal(route.request().postDataJSON().message_id,'missing');
             unmatched=[];
             return route.fulfill({json:{status:'已废弃，本地原文已删除，此消息不会再次识别'}});
           }
-          assert.equal(endpoint,'/sources/suggestions/s');
+          assert.ok(['/sources/suggestions/s','/sources/suggestions/manual'].includes(endpoint));
           const event={id:'e',type:'event',parent:'t',name:proposal.name,description:'',owner:'',planStart:'',planEnd:'',status:'notStarted',version:1};
           items.push(event); suggestions=[];
           return route.fulfill({json:{saved:event}});
@@ -175,6 +180,27 @@ fs.mkdirSync(output, {recursive:true});
     await page.waitForFunction(()=>!retryBusy && unmatchedMessages.length===0);
     assert.equal(writes,2);
     assert.match(await page.locator('#chatResults').innerText(),/没有未匹配消息/);
+    unmatched=[{source_id:'src',message_id:'manual',version:2,content:'继续推进项目数据收集，协调相关责任人，确认后续交付资料',processed:true,can_retry:false,retry_block_reason:'模型输出不符合约定，来源已暂停'}];
+    await page.evaluate(()=>refreshSuggestions());
+    await page.getByRole('button',{name:'未找到建议 1'}).click();
+    assert.equal(await page.getByRole('button',{name:'重新识别此条',exact:true}).isDisabled(),true);
+    assert.equal(await page.getByRole('button',{name:'手动整理',exact:true}).isEnabled(),true);
+    for (const width of [1440,1024,887,768,375]) {
+      await page.setViewportSize({width,height:960});
+      assert.ok(await drawer.evaluate(e=>e.scrollWidth<=e.clientWidth));
+      await page.screenshot({path:path.join(output,`manual-${width}.png`)});
+    }
+    await page.getByRole('button',{name:'手动整理',exact:true}).click();
+    await page.locator('#suggestionDrawer').waitFor();
+    assert.equal(await page.locator('#suggestionName').inputValue(),'手动原文');
+    await page.selectOption('#suggestionGoal','g');
+    await page.selectOption('#suggestionModule','m');
+    await page.selectOption('#suggestionThing','t');
+    await page.locator('#suggestionName').fill('手动核对后的行动');
+    await page.locator('#suggestionDrawer button[onclick="confirmSuggestion()"]').click();
+    await drawer.waitFor();
+    await page.waitForFunction(()=>!suggestionBusy && !retryBusy);
+    assert.equal(writes,4);
     await drawer.getByRole('button',{name:'关闭',exact:true}).click();
     await page.waitForFunction(() => document.activeElement?.id === 'eventRecognitionTrigger' && document.activeElement.getAttribute('aria-expanded') === 'false');
     assert.equal(await entry.getAttribute('aria-expanded'),'false');

@@ -326,3 +326,44 @@ def test_discard_removes_text_and_survives_new_source(
     analyze_source(engine, fresh)
     with pytest.raises(WorkError):
         retry_message(engine, "personal", fresh, "ignore", 1)
+
+
+def test_manual_draft_works_while_paused_and_without_ai(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from todo_backend.modules.sources.placement import Placement, accept_new, create_work
+    from todo_backend.modules.sources.recovery import manual_message
+    from todo_backend.modules.work.schemas import ItemInput
+
+    sid = add_source(engine, page("manual"))
+    with engine.begin() as conn:
+        conn.execute(update(sources).values(enabled=False, ai_consent=False, status="模拟模型失败"))
+        goal = create_work(conn, "personal", ItemInput(type="goal", name="手动目标"))
+    with pytest.raises(WorkError):
+        manual_message(engine, "other", sid, "manual", 1)
+    with pytest.raises(WorkError):
+        manual_message(engine, "personal", sid, "manual", 9)
+    draft = manual_message(engine, "personal", sid, "manual", 1)
+    assert manual_message(engine, "personal", sid, "manual", 1) == draft
+    with engine.connect() as conn:
+        assert conn.execute(select(suggestions.c.state)).scalar_one() == "pending"
+        assert not conn.execute(select(sources.c.enabled)).scalar_one()
+    placement = Placement(goal_id=goal, new_module_name="手动模块", new_thing_name="手动事情")
+    event = accept_new(engine, "personal", draft, None, placement)
+    assert accept_new(engine, "personal", draft, None, placement).id == event.id
+    assert event.name == "行动manual"
+    assert unmatched_messages(engine, "personal") == []
+
+
+def test_manual_draft_rejects_discarded_and_removed(engine: Engine) -> None:
+    from todo_backend.modules.sources.discarding import discard_message
+    from todo_backend.modules.sources.recovery import manual_message
+
+    sid = add_source(engine, page("gone"))
+    discard_message(engine, "personal", sid, "gone", 1)
+    with pytest.raises(WorkError):
+        manual_message(engine, "personal", sid, "gone", 2)
+    with engine.begin() as conn:
+        conn.execute(update(sources).values(removed=True))
+    with pytest.raises(WorkError):
+        manual_message(engine, "personal", sid, "gone", 3)

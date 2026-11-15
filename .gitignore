@@ -57,9 +57,6 @@ test-results/
 /docs/testing/
 /docs/prototype/*.png
 
-# One-off local migration helper embeds the authorized server address.
-/code/scripts/transfer_sqlite.py
-
 # Editor and operating-system files
 .idea/
 .vscode/

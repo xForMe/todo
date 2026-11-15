@@ -2,13 +2,40 @@
 param(
     [ValidateRange(1024, 65535)][int]$Port = 8000,
     [switch]$SkipSync,
-    [switch]$Migrate,
     [switch]$CheckOnly
 )
 
 $ErrorActionPreference = 'Stop'
 $backendPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\backend'))
 $locationPushed = $false
+
+function Get-ProjectListeners {
+    # Only listeners belonging to this checkout can be stopped, never arbitrary port owners.
+    $owners = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+        Where-Object { $_.LocalPort -eq $Port } | Select-Object -ExpandProperty OwningProcess -Unique)
+    foreach ($ownerId in $owners) {
+        $process = Get-CimInstance Win32_Process -Filter "ProcessId=$ownerId"
+        $command = [string]$process.CommandLine
+        $python = Join-Path $backendPath '.venv\Scripts\python.exe'
+        $uvicorn = Join-Path $backendPath '.venv\Scripts\uvicorn.exe'
+        $owned = $command -match '(^|\s)todo_backend\.main:create_app(\s|$)' -and (
+            $command.IndexOf('"' + $python + '"', [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $command.IndexOf('"' + $uvicorn + '"', [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $command.StartsWith($python + ' ', [StringComparison]::OrdinalIgnoreCase) -or
+            $command.StartsWith($uvicorn + ' ', [StringComparison]::OrdinalIgnoreCase))
+        if (-not $process -or -not $owned) {
+            throw "端口 $Port 被其他程序或无法核实的进程占用（PID $ownerId），未停止该进程。"
+        }
+        $process
+    }
+}
+
+function Assert-PortAvailable {
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
+    try { $listener.Start() } catch { throw "端口 $Port 未释放或已被其他程序占用，启动已停止。" }
+    finally { $listener.Stop() }
+}
+
 try {
     if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
         throw '未找到 uv，请先安装 uv 并重新打开终端。'
@@ -18,11 +45,10 @@ try {
             throw "缺少工程文件：$required"
         }
     }
-    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
-    try { $listener.Start() } catch { throw "端口 $Port 已被占用，请停止旧服务或使用 -Port 指定其他端口。" }
-    finally { $listener.Stop() }
+    $existing = @(Get-ProjectListeners)
+    if (-not $existing.Count) { Assert-PortAvailable }
     if ($CheckOnly) {
-        Write-Host "启动环境检查通过：uv、工程文件、127.0.0.1:$Port。未安装依赖、迁移或启动服务。"
+        Write-Host "启动环境检查通过：端口 $Port，本项目已运行进程数 $($existing.Count)。未停止服务、同步依赖或访问数据库。"
         exit 0
     }
     Push-Location -LiteralPath $backendPath
@@ -33,38 +59,25 @@ try {
         if ($LASTEXITCODE -ne 0) { throw '依赖同步失败，启动已停止。' }
     }
     & uv run --locked python ../scripts/database_status.py
-    $databaseResult = $LASTEXITCODE
-    if ($databaseResult -eq 0) {
-        if ($Migrate) { throw '远程数据库不自动迁移，请按 TECH-013 显式执行并验证。' }
-    } elseif ($databaseResult -eq 10) {
-        if ($env:TODO_DATABASE_URL) { throw '自定义 SQLite 请按 README 手动启动，避免备份错误文件。' }
-    $dataPath = Join-Path $backendPath 'data'
-    New-Item -ItemType Directory -Force -Path $dataPath | Out-Null
-    $databasePath = Join-Path $dataPath 'todo.sqlite3'
-    if (-not (Test-Path -LiteralPath $databasePath) -and -not $Migrate) {
-        throw '本地数据库不存在。首次初始化请运行 code\scripts\start.ps1 -Migrate。'
+    if ($LASTEXITCODE -ne 0) {
+        throw 'PostgreSQL 连接或版本检查失败，旧服务未停止。'
     }
-    if ($Migrate) {
-        if (Test-Path -LiteralPath $databasePath) {
-            $backupPath = Join-Path $dataPath ('backups\' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
-            New-Item -ItemType Directory -Path $backupPath -Force | Out-Null
-            foreach ($suffix in @('', '-wal', '-shm')) {
-                $sourcePath = $databasePath + $suffix
-                if (Test-Path -LiteralPath $sourcePath) {
-                    Copy-Item -LiteralPath $sourcePath -Destination $backupPath -ErrorAction Stop
-                }
-            }
-            Write-Host "本地数据库已备份：$backupPath"
+    foreach ($previous in @(Get-ProjectListeners)) {
+        $current = Get-CimInstance Win32_Process -Filter "ProcessId=$($previous.ProcessId)"
+        if (-not $current) { continue }
+        if ($current.CreationDate -ne $previous.CreationDate -or $current.CommandLine -ne $previous.CommandLine) {
+            throw '端口进程身份已变化，未停止进程，请重新启动。'
         }
-        Write-Host '正在执行数据库迁移……'
-        & uv run --locked alembic upgrade head
-        if ($LASTEXITCODE -ne 0) { throw '数据库迁移失败，启动已停止；请保留备份检查原因。' }
-    } else {
-        Write-Host '使用已有本地数据库，保留原有数据；本次不备份、不迁移。'
+        Write-Host "正在停止本项目旧服务（PID $($current.ProcessId)）……"
+        Stop-Process -Id $current.ProcessId -Force
+        Wait-Process -Id $current.ProcessId -Timeout 10 -ErrorAction SilentlyContinue
     }
-    } else {
-        throw '数据库连接或版本检查失败，启动已停止。'
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    while (@(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+        Where-Object { $_.LocalPort -eq $Port }).Count -and [DateTime]::UtcNow -lt $deadline) {
+        Start-Sleep -Milliseconds 200
     }
+    Assert-PortAvailable
     Write-Host "打开浏览器访问 http://127.0.0.1:$Port ，即可开始使用。"
     Write-Host '服务运行期间请保持此窗口打开，按 Ctrl+C 停止。'
     & uv run --locked uvicorn todo_backend.main:create_app --factory --host 127.0.0.1 --port $Port

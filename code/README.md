@@ -11,7 +11,7 @@ uv sync --locked
 uv run --locked uvicorn todo_backend.main:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
-访问 http://127.0.0.1:8000 ，页面自动连接。首次从空白目标开始。本机会话由浏览器自动建立，无需输入令牌。业务数据保存在 backend/data/todo.sqlite3；本次浏览器联调写入的名称以「浏览器联调-」标记，不是真实业务数据。
+访问 http://127.0.0.1:8000 ，页面自动连接。本机会话由浏览器自动建立，无需输入令牌。当前业务数据使用 code/.env 配置的 PostgreSQL；旧 backend/data/todo.sqlite3 仅作历史保留。本次浏览器联调写入的名称以「浏览器联调-」标记，不是真实业务数据。
 
 ## 检查
 
@@ -42,7 +42,7 @@ node --check ../frontend/app.js
 & E:\work\demo\todo\code\scripts\start.ps1 -CheckOnly
 ```
 
-脚本默认复用现有 SQLite 数据，不备份、不迁移、不清空。首次初始化或明确升级表结构时运行 `code/scripts/start.ps1 -Migrate`，此时先备份现有数据库至 backend/data/backups，再迁移并启动。数据库不存在时普通启动会停止并提示初始化。迁移前请停止其他使用同一数据库的进程。自定义 TODO_DATABASE_URL 不由该入口自动迁移，使用上方手动启动流程。
+启动入口只接受 PostgreSQL。依赖同步和数据库连接/版本检查通过后，如端口由本项目旧服务占用，先结束旧进程并确认端口释放，再启动新服务；其他程序占用时停止并提示，不误杀。检查失败保留旧服务。`-CheckOnly` 只检查环境和端口身份，即使已运行也不会结束服务。已移除 `-Migrate` 参数，数据库升级须先停写和备份，再按 TECH-013 显式执行。
 
 
 ## 飞书来源与 AI（2026-11-13）
@@ -87,8 +87,17 @@ SRC-DB-001 / TECH-013 / TEST-010。本节替代上文“PostgreSQL 待安装”�
 
 `code/.env` 配置 TODO_DB_HOST、TODO_DB_PORT、TODO_DB_NAME、TODO_DB_USER、TODO_DB_SSLMODE 和 DB_PASSWORD（兼容小写 db_password）；继承 TODO_DATABASE_URL 优先。驱动已锁定，不需要手工安装。示例见 config/postgresql.env.example。
 
-普通 `code/start.cmd` 读取已配置数据库，检查连接和迁移版本，不自动迁移。远程库拒绝一键 -Migrate；显式升级前先停写和备份，再运行 `uv run --locked alembic upgrade head` 并核对数据。迁移 0011 补齐 PostgreSQL 写入约束和大整数时间戳。
+普通 `code/start.cmd` 读取已配置数据库，检查连接和迁移版本，不自动迁移。启动入口不提供 -Migrate；显式升级前先停写和备份，再运行 `uv run --locked alembic upgrade head` 并核对数据。迁移 0011 补齐 PostgreSQL 写入约束和大整数时间戳。
 
 默认统一检查只使用临时 SQLite，关闭后台来源读取。显式设置 TODO_TEST_DATABASE_URL 后运行 pytest，会在 todo 数据库创建随机 todo_validation_ 前缀 schema，测试后删除，只用于明确授权的数据库验证；不会读取或清空 public。不要将密码写入命令历史。
 
-一次性导入脚本 `code/scripts/transfer_sqlite.py` 仅接受授权目标且 public 为空；需先停服务并配置目标，通过 SQLite backup API 备份后导入、逐表核对并保存 verification.json。拒绝非空目标，不自动重试。旧 SQLite 保留；切换后如需回退，须先核对新写入，不能直接切回丢失增量。
+已归档的一次性导入脚本 `archive/scripts/20261115-postgresql/transfer_sqlite.py` 仅接受授权目标且 public 为空；需先停服务并配置目标，通过 SQLite backup API 备份后导入、逐表核对并保存 verification.json。拒绝非空目标，不自动重试。旧 SQLite 保留；切换后如需回退，须先核对新写入，不能直接切回丢失增量。
+
+## 事件迁移（Issue #1）
+REQ-F-011 / TECH-015 / TEST-012。事件详情或编辑抽屉的“迁移事件”入口支持选择目标、模块、事情，确认后移动事件及全部子事件。跨迁移范围的关联须先解除；相关文档读取及催办暂停，待确认建议作废保留记录。版本与回执复用现有表，无需数据库迁移，重启后端并刷新页面生效。未知结果可通过全局栏“核对待确认迁移”查询。
+
+统一检查覆盖 `tests/test_event_move.py`，前端语法检查包含 `event-move.js`。浏览器回归为 `code/scripts/verify-event-move.cjs`，须在关闭来源读取的临时数据库服务上显式设置 `TODO_MOVE_TEST_URL` 后运行；禁止指向真实业务服务，脚本拒绝8000端口。需要现有 Playwright + Chrome 环境，可使用 NODE_PATH 指向工具 node_modules。截图与报告输出至 runtime/issue1-ui。
+
+## 常用脚本与归档（2026-11-15）
+
+`code/scripts` 保留启动、数据库检查、统一检查及两份浏览器回归脚本。`migrate_events.py`、`transfer_sqlite.py` 和 `capture-ui.cjs` 已移至 `archive/scripts/20261115-postgresql/`，不属于当前操作入口。应用底层及离线测试仍支持 SQLite；日常一键启动只使用 PostgreSQL。

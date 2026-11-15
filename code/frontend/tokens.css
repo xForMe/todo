@@ -64,6 +64,7 @@
   --sidebar-active:#2c3e59;
   --sidebar-line:#324158;
   --delete-button-color:var(--danger);
+  --confirmation-width:440px;
   --drawer-shadow:-16px 0 64px #18243820;
   --backdrop:#18243866;
   --shadow-sm:0 2px 5px #18243806;

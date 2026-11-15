@@ -101,3 +101,7 @@ REQ-F-011 / TECH-015 / TEST-012。事件详情或编辑抽屉的“迁移事件�
 ## 常用脚本与归档（2026-11-15）
 
 `code/scripts` 保留启动、数据库检查、统一检查及两份浏览器回归脚本。`migrate_events.py`、`transfer_sqlite.py` 和 `capture-ui.cjs` 已移至 `archive/scripts/20261115-postgresql/`，不属于当前操作入口。应用底层及离线测试仍支持 SQLite；日常一键启动只使用 PostgreSQL。
+
+
+## 事情与事件删除（Issue #2）
+REQ-F-012 / TECH-017 / TEST-014。事情详情、事件行及事件详情/编辑提供删除入口；居中弹窗确认（无侧滑），事情有内容须换绑，事件有子事件须先迁移或处理。事件资料转至所属事情并暂停读取，催办暂停，待处理建议作废，关联历史保存在删除回执。无需迁移表结构，重启后端并刷新页面生效；未知结果通过全局栏核对，不自动重试。浏览器验证脚本 verify-deletion.cjs 只接受显式 TODO_DELETE_TEST_URL 指定的隔离本机非8000服务。

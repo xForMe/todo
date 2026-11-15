@@ -23,6 +23,193 @@ from todo_backend.modules.work import deletion
 from todo_backend.modules.work.repository import deletions, items
 
 
+def test_leaf_event_delete_duplicate_and_parent(client: TestClient) -> None:
+    left = branch(client)
+    duplicate = create(client, "event", left[2])
+    path = f"/api/items/{left[3]}/deletion"
+    body = intent(client, left[3])
+    assert client.post(path, json=body).status_code == 200
+    assert client.post(path, json=body).status_code == 200
+    assert client.get("/api/deletions/" + str(body["operation_id"])).status_code == 200
+    visible = {r["id"] for r in client.get("/api/items").json()}
+    assert left[3] not in visible and duplicate in visible
+    structure = client.get(f"/api/events/{duplicate}/structure").json()
+    assert {r["id"] for r in structure["events"]} == {duplicate}
+    assert client.get(path).status_code == 404
+    assert client.get(f"/api/events/{left[3]}/structure").status_code == 404
+    assert (
+        client.put(
+            f"/api/items/{left[3]}",
+            json={
+                "type": "event",
+                "parent": left[2],
+                "name": "resurrect",
+                "expected_version": 1,
+                "operation_id": str(uuid4()),
+            },
+        ).status_code
+        == 404
+    )
+    changed = {**body, "target_id": duplicate}
+    assert client.post(path, json=changed).status_code == 409
+
+
+def test_event_children_relations_and_stale_review(client: TestClient) -> None:
+    from todo_backend.modules.work.event_repository import branches, links
+
+    left = branch(client)
+    child, peer = create(client, "event", left[2]), create(client, "event", left[2])
+    assert isinstance(client.app, FastAPI)
+    engine = client.app.state.engine
+    with engine.begin() as conn:
+        conn.execute(insert(branches).values(account="personal", parent_id=left[3], child_id=child))
+    path = f"/api/items/{left[3]}/deletion"
+    assert client.get(path).status_code == 409
+    child_path = f"/api/items/{child}/deletion"
+    old = intent(client, child)
+    relation_id = str(uuid4())
+    with engine.begin() as conn:
+        conn.execute(
+            insert(links).values(
+                id=relation_id, account="personal", source=peer, target=child, kind="related"
+            )
+        )
+    assert client.post(child_path, json=old).status_code == 409
+    body = intent(client, child)
+    assert client.post(child_path, json={**body, "target_id": peer}).status_code == 422
+    result = client.post(child_path, json=body)
+    assert result.status_code == 200, result.text
+    assert len(result.json()["relations"]) == 2
+    structure = client.get(f"/api/events/{left[3]}/structure").json()
+    assert not structure["branches"] and not structure["links"]
+    parent = next(r for r in structure["events"] if r["id"] == left[3])
+    assert parent["status"] == "notStarted"
+    assert (
+        client.put(
+            f"/api/items/{left[3]}",
+            json={
+                **{k: v for k, v in parent.items() if k not in {"id", "version"}},
+                "expected_version": parent["version"],
+                "status": "completed",
+                "operation_id": str(uuid4()),
+            },
+        ).status_code
+        == 200
+    )
+    monkey_body = intent(client, peer)
+    assert client.post(f"/api/items/{peer}/deletion", json=monkey_body).status_code == 200
+
+
+def test_event_evidence_and_failure_rollback(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from todo_backend.modules.sources.follow import attempts, rules
+    from todo_backend.modules.work import event_deletion
+
+    left = branch(client)
+    sid, proposal_id = str(uuid4()), str(uuid4())
+    assert (
+        client.post(
+            "/api/sources",
+            json={
+                "id": sid,
+                "kind": "document",
+                "context": left[3],
+                "address": "https://example.feishu.cn/wiki/Test",
+                "enabled": True,
+                "consent": True,
+                "ai_consent": True,
+            },
+        ).status_code
+        == 200
+    )
+    assert isinstance(client.app, FastAPI)
+    engine = client.app.state.engine
+    with engine.begin() as conn:
+        conn.execute(
+            insert(suggestions).values(
+                id=proposal_id,
+                account="personal",
+                source_id=sid,
+                thing_id=left[2],
+                event_id=left[3],
+                event_version=1,
+                action="update",
+                body="{}",
+                state="applying",
+            )
+        )
+        conn.execute(
+            insert(rules).values(
+                event_id=left[3],
+                account="personal",
+                recipient="ou_test",
+                content="催办",
+                at="09:00",
+                cap=3,
+                count=0,
+                enabled=True,
+                event_version=1,
+                version=1,
+                next_run=9999999999,
+                status="等待",
+            )
+        )
+    path = f"/api/items/{left[3]}/deletion"
+    assert client.get(path).status_code == 409
+    with engine.begin() as conn:
+        conn.execute(
+            update(suggestions).where(suggestions.c.id == proposal_id).values(state="pending")
+        )
+        conn.execute(
+            insert(attempts).values(
+                id=str(uuid4()),
+                account="personal",
+                event_id=left[3],
+                state="pending",
+                content="催办",
+                message_id="",
+                created=1,
+            )
+        )
+    assert client.get(path).status_code == 409
+    with engine.begin() as conn:
+        conn.execute(update(attempts).values(state="sent"))
+    body = intent(client, left[3])
+    monkeypatch.setenv("TODO_OWNER_ID", "foreign")
+    assert client.get(path).status_code == 404
+    monkeypatch.setenv("TODO_OWNER_ID", "personal")
+    original = event_deletion.detach
+
+    def fail(conn: Connection, account: str, item_id: str, thing_id: str) -> None:
+        original(conn, account, item_id, thing_id)
+        raise SQLAlchemyError("injected")
+
+    monkeypatch.setattr(event_deletion, "detach", fail)
+    assert client.post(path, json=body).status_code == 503
+    assert client.get("/api/deletions/" + str(body["operation_id"])).status_code == 404
+    with engine.connect() as conn:
+        assert (
+            conn.execute(select(sources.c.context).where(sources.c.id == sid)).scalar_one()
+            == left[3]
+        )
+    monkeypatch.setattr(event_deletion, "detach", original)
+    assert client.post(path, json=body).status_code == 200
+    with engine.connect() as conn:
+        source = conn.execute(select(sources).where(sources.c.id == sid)).mappings().one()
+        assert source["context"] == left[2] and not source["enabled"]
+        assert (
+            conn.execute(
+                select(suggestions.c.state).where(suggestions.c.id == proposal_id)
+            ).scalar_one()
+            == "discarded"
+        )
+        assert not conn.execute(
+            select(rules.c.enabled).where(rules.c.event_id == left[3])
+        ).scalar_one()
+        assert conn.execute(select(items.c.id).where(items.c.id == left[3])).scalar_one() == left[3]
+
+
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setenv("TODO_DATABASE_URL", database_for_test(tmp_path / "delete.db"))

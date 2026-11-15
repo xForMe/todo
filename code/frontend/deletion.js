@@ -11,7 +11,7 @@ $('#editor .actions').prepend(deleteEntry);
 const originalOpenForm = openForm;
 openForm = function(type, id) {
   originalOpenForm(type, id);
-  deleteEntry.hidden = !id || type === 'event';
+  deleteEntry.hidden = !id;
   deleteEntry.textContent = '删除' + names[type];
 };
 deleteEntry.onclick = () => openDeletion(editing?.id);
@@ -19,7 +19,7 @@ const recoveryButton = document.createElement('button');
 recoveryButton.textContent = '核对待确认删除';
 recoveryButton.hidden = !deletionIntent;
 recoveryButton.onclick = () => openDeletion(deletionIntent?.id);
-$('.connectionTools').append(recoveryButton);
+$('.workspaceBar').insertBefore(recoveryButton, $('#workspaceDate'));
 
 function saveDeleteIntent(value) {
   deletionIntent = value;
@@ -36,22 +36,30 @@ function updateDeleteControls() {
   const uncertain = Boolean(deletionIntent);
   $('#deleteTarget').disabled = deletionBusy || uncertain;
   $('#reloadDelete').disabled = deletionBusy || uncertain;
+  $('#reloadDelete').hidden = !$('#deleteError').textContent || uncertain;
   $('#checkDelete').hidden = !uncertain;
   $('#checkDelete').disabled = deletionBusy;
   $('#closeDelete').disabled = deletionBusy;
   $('#submitDelete').disabled = deletionBusy || (uncertain ? !deletionRetryAllowed :
     !deletionView?.impact || (deletionView.impact.requires_target && !$('#deleteTarget').value));
-  if (uncertain) $('#submitDelete').textContent = '再次提交原操作';
+  if (uncertain) $('#submitDelete').textContent = deletionBusy ? '处理中…' : deletionRetryAllowed ? '再次提交原操作' : '确认删除';
   $('#deleteDestination').textContent = itemPath(get($('#deleteTarget').value));
 }
 async function openDeletion(id) {
   if (deletionBusy) return;
   if (pendingWrite) { notify('请先核对待确认保存操作'); return; }
+  if (busy || eventBusy || eventPending || moveBusy || moveIntent || priorityBusy || priorityPending || wbBusy || wbPending) {
+    notify('请先核对其他尚未完成的操作'); return;
+  }
+  aiGeneration++;
+  if (eventDialog.open) eventDialog.close();
   $('#editor').close();
   $('#deleteDrawer').showModal();
   $('#deleteError').textContent = '';
   if (deletionIntent) {
     deletionView = {id: deletionIntent.id};
+    $('#deleteTitle').textContent = '核对删除结果';
+    $('#deleteHint').textContent = '';
     $('#deleteName').textContent = deletionIntent.name;
     $('#deleteImpact').textContent = '上次删除结果待核对；保留原操作，不会自动重新提交。';
     $('#deleteTargetGroup').hidden = true;
@@ -68,6 +76,10 @@ async function loadDeletion() {
   deletionView.impact = null;
   $('#deleteImpact').textContent = '正在核对下级内容和关联资料…';
   $('#deleteName').textContent = get(id)?.name || '';
+  $('#deleteTitle').textContent = '删除' + (names[get(id)?.type] || '对象');
+  $('#deleteTargetGroup').hidden = true;
+  $('#deleteHint').textContent = '';
+  $('#submitDelete').textContent = '确认删除';
   $('#deleteError').textContent = '';
   updateDeleteControls();
   try {
@@ -75,19 +87,24 @@ async function loadDeletion() {
     const impact = await api('/items/' + id + '/deletion');
     deletionView.impact = impact;
     $('#deleteTitle').textContent = '删除' + names[impact.item.type];
-    $('#deleteName').textContent = itemPath(impact.item);
+    $('#deleteName').textContent = '确定删除“' + impact.item.name + '”？';
     $('#deleteImpact').textContent = impact.requires_target
       ? `下级内容 ${impact.descendants} 项（直接下级 ${impact.children} 项） · 文档来源 ${impact.documents} 条 · AI 建议 ${impact.suggestions} 条 · 催办规则 ${impact.reminders} 条。`
-      : '没有下级内容或关联资料，可以删除当前对象。';
+      : '';
     $('#deleteTargetGroup').hidden = !impact.requires_target;
     const target = $('#deleteTarget');
     target.replaceChildren(new Option('请选择接收位置', ''));
     for (const item of children(impact.item.type).filter(x => x.id !== id)) {
       target.add(new Option(itemPath(item), item.id));
     }
-    $('#deleteHint').textContent = impact.requires_target && target.options.length === 1
+    const hasReferences = impact.documents || impact.suggestions || impact.reminders || impact.relations.length;
+    $('#deleteHint').textContent = impact.item.type === 'event' && hasReferences
+      ? '关联解除；文档保留到所属事情，读取与催办暂停，待处理建议作废。历史记录保留，不改变其他事件。'
+      : impact.requires_target && target.options.length === 1
       ? '暂无可用接收位置，请取消后先创建另一个' + names[impact.item.type] + '。'
-      : '双方内容合在一起保留；目标换绑时同名模块自动融合，事情和事件不自动去重。受影响来源和催办暂停。';
+      : impact.requires_target
+        ? '下级内容会完整保留，受影响来源和催办暂停。'
+        : '';
     $('#submitDelete').textContent = impact.requires_target ? '换绑并删除' : '确认删除';
   } catch (e) {
     $('#deleteImpact').textContent = '尚未获取到有效影响范围。';
@@ -112,7 +129,7 @@ async function finishDeletion(result) {
   editing = null;
   await refreshSuggestions();
   render();
-  notify('已删除，原有下级内容已保留');
+  notify('已删除，历史记录已保留');
 }
 async function submitDeletion() {
   if (deletionBusy) return;

@@ -11,7 +11,7 @@ from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from todo_backend.modules.work.event_repository import branches, links, receipts
-from todo_backend.modules.work.repository import items, read_item
+from todo_backend.modules.work.repository import deletions, items, read_item
 from todo_backend.modules.work.schemas import ItemInput, ItemOutput
 from todo_backend.modules.work.service import WorkError
 
@@ -45,6 +45,7 @@ def state(conn: Connection, account: str, event_id: str) -> dict[str, object]:
                 items.c.account == account,
                 items.c.parent == current.parent,
                 items.c.type == "event",
+                items.c.id.not_in(select(deletions.c.item_id)),
             )
         ).mappings()
     )
@@ -184,7 +185,10 @@ def mutate(engine: Engine, account: str, event_id: str, data: EventAction) -> di
                         conn.execute(
                             select(items.c.name)
                             .join(branches, items.c.id == branches.c.child_id)
-                            .where(branches.c.parent_id == event_id)
+                            .where(
+                                branches.c.parent_id == event_id,
+                                items.c.id.not_in(select(deletions.c.item_id)),
+                            )
                         ).scalars()
                     )
                     for child in data.children:

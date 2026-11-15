@@ -5,12 +5,13 @@ import json
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, or_, select, update
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from todo_backend.modules.sources.follow import attempts, rules
 from todo_backend.modules.sources.repository import sources, suggestions
+from todo_backend.modules.work import event_deletion
 from todo_backend.modules.work.repository import deletions, items, read_item
 from todo_backend.modules.work.service import WorkError
 
@@ -29,8 +30,7 @@ def preview(conn: Connection, account: str, item_id: str) -> dict[str, object]:
     current = read_item(conn, account, item_id)
     if current is None:
         raise WorkError(404, "对象不存在或已删除")
-    if current.type == "event":
-        raise WorkError(422, "本功能仅支持目标、模块、事情")
+    history = event_deletion.relations(conn, account, item_id) if current.type == "event" else []
     rows = list(
         conn.execute(
             select(items).where(
@@ -51,7 +51,8 @@ def preview(conn: Connection, account: str, item_id: str) -> dict[str, object]:
     proposals = (
         conn.execute(
             select(suggestions).where(
-                suggestions.c.account == account, suggestions.c.thing_id.in_(affected)
+                suggestions.c.account == account,
+                or_(suggestions.c.thing_id.in_(affected), suggestions.c.event_id.in_(affected)),
             )
         )
         .mappings()
@@ -74,6 +75,7 @@ def preview(conn: Connection, account: str, item_id: str) -> dict[str, object]:
     if sending or any(r["state"] == "applying" for r in proposals):
         raise WorkError(409, "有正在处理或结果待核对的操作，请先核对后再删除")
     payload = [[dict(r) for r in group] for group in (rows, documents, proposals, reminder_rows)]
+    payload.append(history)
     # Sorting removes query ordering differences without losing field values.
     snapshot = hashlib.sha256(
         json.dumps(
@@ -94,7 +96,8 @@ def preview(conn: Connection, account: str, item_id: str) -> dict[str, object]:
         "documents": len(documents),
         "suggestions": len(proposals),
         "reminders": len(reminder_rows),
-        "requires_target": bool(direct or own_refs),
+        "requires_target": current.type != "event" and bool(direct or own_refs),
+        "relations": history,
     }
 
 
@@ -135,6 +138,8 @@ def remove_item(engine: Engine, account: str, item_id: str, data: DeleteInput) -
                     raise WorkError(409, "内容已变化，请刷新影响范围后重新确认")
                 current = read_item(conn, account, item_id)
                 assert current is not None
+                if current.type == "event" and target_id:
+                    raise WorkError(422, "事件删除不接受接收位置")
                 target = read_item(conn, account, target_id) if target_id else None
                 if target_id and (
                     target is None or target.type != current.type or target_id == item_id
@@ -148,6 +153,7 @@ def remove_item(engine: Engine, account: str, item_id: str, data: DeleteInput) -
                     "target_id": target_id,
                     "operation_id": operation_id,
                     "moved_children": impact["children"],
+                    "relations": impact["relations"],
                 }
                 conn.execute(
                     insert(deletions).values(
@@ -166,6 +172,11 @@ def remove_item(engine: Engine, account: str, item_id: str, data: DeleteInput) -
 
 def transfer(conn: Connection, account: str, item_id: str, target_id: str | None) -> None:
     """Preserve descendants and provenance, pausing affected automation."""
+    current = read_item(conn, account, item_id)
+    if current and current.type == "event":
+        assert current.parent is not None
+        event_deletion.detach(conn, account, item_id, current.parent)
+        return
     rows = list(
         conn.execute(
             select(items).where(

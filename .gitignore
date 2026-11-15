@@ -11,6 +11,8 @@ build/
 .env.*
 !.env.example
 runtime/
+/archive/
+/docs/
 
 code/backend/data/
 

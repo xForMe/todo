@@ -1,0 +1,100 @@
+name: 缺陷报告
+description: 报告 TODO 工作台、事件管理、飞书来源或 AI 识别的问题
+title: "[缺陷] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先确认使用的是最新代码，并删除内容中的 API 密钥、Cookie、私信正文和完整个人网址。
+
+  - type: input
+    id: version
+    attributes:
+      label: 代码版本
+      description: 填写当前分支或提交编号，可通过 git rev-parse --short HEAD 查看
+      placeholder: main / 提交编号
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 问题范围
+      options:
+        - 启动或数据库配置
+        - 全局工作台
+        - 目标、模块、事情与事件
+        - 优先级、评估或持续关注
+        - 飞书来源读取
+        - AI 识别或建议确认
+        - 催办配置
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 请按顺序描述页面、操作和触发条件，使用脱敏示例
+      placeholder: |
+        1. 打开……
+        2. 点击……
+        3. 看到……
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+      description: 请粘贴完整的脱敏错误提示，不要只写“不能用”
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 脱敏排查信息
+      description: 可粘贴脱敏日志；不要包含真实工作内容、聊天正文、数据库连接串或凭据
+      render: json
+
+  - type: textarea
+    id: prototype
+    attributes:
+      label: 修复原型
+      description: 提供修复后高保真 HTML 原型路径或可访问链接；若确实不涉及用户可见界面，填写“不适用”并说明原因
+      placeholder: |
+        路径/链接：本地 docs/prototype/PRO-### 或可访问的脱敏附件
+        覆盖状态：
+        评审状态：待评审
+    validations:
+      required: true
+
+  - type: textarea
+    id: technical
+    attributes:
+      label: 修复技术方案
+      description: 说明根因、修改边界、失败停止条件、验证方式和未验证事项；可填写待分析，本地方案按项目规则回写 TECH 文档
+      placeholder: |
+        路径/链接：本地 docs/technical/TECH-### 或可访问的脱敏附件
+        根因与方案：
+        待验证事项：
+        评审状态：待评审
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已删除 API 密钥、Cookie、私信正文和其他敏感信息
+          required: true
+        - label: 我已检查当前分支或版本，并确认问题仍可复现
+          required: true

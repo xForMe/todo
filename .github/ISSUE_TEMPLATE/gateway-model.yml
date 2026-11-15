@@ -1,0 +1,77 @@
+name: AI 或飞书接入问题
+description: 报告 AI 服务、飞书 CLI 或来源识别的配置与请求问题
+title: "[接入] "
+body:
+  - type: dropdown
+    id: stage
+    attributes:
+      label: 失败阶段
+      options:
+        - 应用启动或配置加载
+        - 飞书 CLI 授权
+        - 飞书来源读取
+        - AI 识别请求
+        - 建议归属或确认
+        - 已授权催办
+        - 不确定
+    validations:
+      required: true
+
+  - type: input
+    id: status
+    attributes:
+      label: HTTP 状态码
+      placeholder: 例如 401、403、429；没有则填写无
+
+  - type: textarea
+    id: message
+    attributes:
+      label: 完整脱敏错误
+      description: 请保留失败阶段和状态码，删除密钥、响应中的敏感内容和完整请求正文
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: 配置项状态
+      description: 只说明哪些配置项已填写，不要粘贴配置值或密钥
+      placeholder: |
+        TODO_AI_MODEL：已填写
+        TODO_UAIAPI_KEY：已填写（不粘贴值）
+        TODO_FEISHU_CLI_EXE：已填写或使用默认
+        来源授权状态：已授权 / 未授权
+
+  - type: textarea
+    id: prototype
+    attributes:
+      label: 相关原型
+      description: 提供涉及的高保真 HTML 原型路径或可访问链接；若不涉及用户可见界面，填写“不适用”并说明原因
+      placeholder: |
+        路径/链接：本地 docs/prototype/PRO-### 或可访问的脱敏附件
+        评审状态：待评审
+    validations:
+      required: true
+
+  - type: textarea
+    id: technical
+    attributes:
+      label: 技术方案
+      description: 说明失败阶段、协议/配置边界、停止条件、验证方式和待验证事项；可填写待分析，完整方案按项目规则保存在本地 TECH 文档
+      placeholder: |
+        路径/链接：本地 docs/technical/TECH-### 或可访问的脱敏附件
+        方案摘要：
+        待验证事项：
+        评审状态：待评审
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已删除 API 密钥、Cookie、私信正文和完整模型响应
+          required: true
+        - label: 我没有通过更换模型、服务商或凭据来绕过当前错误
+          required: true

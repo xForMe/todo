@@ -1,0 +1,77 @@
+name: 功能请求
+description: 提议 TODO 工作管理系统的新功能或改进
+title: "[功能] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 要解决的问题
+      description: 当前遇到什么限制，谁会受到影响
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+      description: 请描述希望系统如何工作，可以附脱敏使用示例
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: 使用场景与边界
+      description: 说明适用页面、工作层级、输入内容、人工确认要求和不应触发的情况
+
+  - type: textarea
+    id: prototype
+    attributes:
+      label: 原型设计
+      description: 提供工作区高保真 HTML 原型路径或可访问链接，并说明覆盖的页面、交互和状态；没有原型请填写“待补齐”及原因
+      placeholder: |
+        路径/链接：本地 docs/prototype/PRO-### 或可访问的脱敏附件
+        覆盖：主流程、空态、加载中、失败、成功
+        评审状态：待评审
+    validations:
+      required: true
+
+  - type: textarea
+    id: technical
+    attributes:
+      label: 技术方案
+      description: 摘要说明模块边界、接口/数据契约、权限隐私、失败停止条件和待验证事项；可填写待分析，完整方案按项目规则保存在本地 TECH 文档
+      placeholder: |
+        路径/链接：本地 docs/technical/TECH-### 或可访问的脱敏附件
+        方案摘要：
+        待验证事项：
+        评审状态：待评审
+    validations:
+      required: true
+
+  - type: textarea
+    id: design_decisions
+    attributes:
+      label: 需要评审的设计决策
+      description: 列出需要确认的交互、范围、数据、权限或验收问题；Issue 结论必须回写需求目录文档
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 写出可以明确判断完成与否的条件
+      placeholder: |
+        - [ ] ……
+        - [ ] ……
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 这个请求不要求提交凭据、真实业务数据或绕过飞书及模型服务权限
+          required: true

@@ -68,6 +68,11 @@
   --drawer-shadow:-16px 0 64px #18243820;
   --backdrop:#18243866;
   --shadow-sm:0 2px 5px #18243806;
+  --recognition-entry-bg:var(--surface);
+  --recognition-entry-color:var(--accent);
+  --recognition-entry-width:112px;
+  --recognition-entry-radius:var(--radius-md);
+  --recognition-drawer-width:600px;
   color-scheme:light
 }
 

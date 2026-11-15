@@ -98,9 +98,9 @@ async function ready(page) {
     await page.locator('.wbGoal').last().click();
     assert.equal(await page.locator('.wbGoal').count(), 1);
     await page.selectOption('#wbScope', '');
-    await page.locator('.wbTabs button').filter({ hasText: '已逾期' }).click();
-    assert.equal(await page.locator('.wbTabs button[aria-pressed=true]').count(), 1);
-    await page.locator('.wbTabs button').filter({ hasText: '全部未结束' }).click();
+    await page.locator('#globalWorkbench .wbTabs button').filter({ hasText: '已逾期' }).click();
+    assert.equal(await page.locator('#globalWorkbench .wbTabs button[aria-pressed=true]').count(), 1);
+    await page.locator('#globalWorkbench .wbTabs button').filter({ hasText: '全部未结束' }).click();
     await page.locator('.wbLayout > .wbPanel .wbTitle').first().click();
     await page.waitForSelector('#workbenchDrawer[open]');
     await layout(page, 'detail-desktop');

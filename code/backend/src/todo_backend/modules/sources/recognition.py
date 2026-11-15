@@ -17,16 +17,22 @@ from todo_backend.modules.work.schemas import ItemOutput, WriteInput
 from todo_backend.modules.work.service import WorkError, write_item
 
 
-def analyze_source(engine: Engine, source_id: str) -> None:
+def analyze_source(
+    engine: Engine, source_id: str, message_id: str = "", expected_version: int = 0
+) -> None:
     """Recognize a changed snapshot within the stored authorization scope."""
     with engine.connect() as conn:
         source = conn.execute(select(sources).where(sources.c.id == source_id)).mappings().one()
+        if message_id and source["version"] != expected_version:
+            raise WorkError(409, "来源已变化，请刷新后核对")
         if (
             source["removed"]
             or not source["enabled"]
             or not source["ai_consent"]
             or not source["content"]
         ):
+            if message_id:
+                raise WorkError(409, "来源未启用或未授权识别")
             return
         digest = hashlib.sha256(source["content"].encode()).hexdigest()
         if source["kind"] != "chat" and digest == source["ai_hash"]:
@@ -62,6 +68,10 @@ def analyze_source(engine: Engine, source_id: str) -> None:
                 ).scalars()
             )
             pending = {key: value for key, value in messages.items() if key not in known}
+            if message_id:
+                if message_id not in messages:
+                    raise WorkError(409, "消息已不在当前读取页")
+                pending = {message_id: messages[message_id]}
             content = "\n".join(pending.values())
         parent = read_item(conn, source["account"], source["context"])
         if parent is None and source["kind"] != "chat":
@@ -124,6 +134,8 @@ def analyze_source(engine: Engine, source_id: str) -> None:
                 ).mappings()
             )
             if latest != all_items:
+                if message_id:
+                    raise WorkError(409, "工作内容已变化，本次结果未保存")
                 return  # Work changed during model call: discard stale classification.
             claimed = conn.execute(
                 update(sources)
@@ -136,14 +148,21 @@ def analyze_source(engine: Engine, source_id: str) -> None:
                     sources.c.content == source["content"],
                     sources.c.ai_hash == source["ai_hash"],
                 )
-                .values(ai_hash=digest, status="读取及 AI 识别完成")
+                .values(
+                    ai_hash=digest,
+                    status=f"识别完成，本次生成 {len(proposals.suggestions)} 条建议",
+                )
             )
             if claimed.rowcount != 1:
+                if message_id:
+                    raise WorkError(409, "来源已变化，本次结果未保存")
                 return
-            for message_id in pending:
+            for pending_id in pending:
+                if message_id and pending_id in known:
+                    continue
                 conn.execute(
                     insert(receipts).values(
-                        account=source["account"], address=source["address"], message_id=message_id
+                        account=source["account"], address=source["address"], message_id=pending_id
                     )
                 )
             for proposal in proposals.suggestions:
@@ -194,6 +213,8 @@ def analyze_source(engine: Engine, source_id: str) -> None:
                 )
                 .values(status=str(exc), enabled=False, version=source["version"] + 1)
             )
+        if message_id:
+            raise WorkError(502, str(exc)) from exc
 
 
 def resolve_proposal(

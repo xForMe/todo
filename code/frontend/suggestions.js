@@ -1,10 +1,10 @@
 /* AI results appear inside their existing thing; no standalone workflow. */
-let aiSuggestions=[],aiSources=[];
+let aiSuggestions=[],aiSources=[],aiLoaded=false,aiError='',aiReadVersion=0;
 function isChatSuggestion(s){return s.source_kind==='chat'||aiSources.some(src=>src.id===s.source_id&&src.kind==='chat')}
 const workRender=render;
 render=function(){workRender();renderSuggestions()};
 function renderSuggestions(){const root=$('#events');root.querySelector('.aiSuggestions')?.remove();const list=aiSuggestions.filter(s=>s.thing_id===selection.thing||(!s.thing_id&&isChatSuggestion(s)));if(!list.length)return;const section=document.createElement('section');section.className='aiSuggestions sourceCard';const title=document.createElement('h3');title.textContent='来源进展与待确认行动';section.append(title);for(const s of list){const p=JSON.parse(s.body),card=document.createElement('div');card.className='sourceCard';const name=document.createElement('strong');name.textContent=(!s.thing_id?'归属待确认 · ':s.state==='linked'?'新进展 · ':'待确认 · ')+p.name;const fields=document.createElement('p');fields.textContent='责任人：'+(p.owner||'待确认')+' · 结束：'+(p.plan_end||'待确认')+' · 建议状态：'+states[p.status];const basis=document.createElement('p');basis.textContent='原文依据：'+p.evidence;const buttons=document.createElement('div');buttons.className='actions';const reject=document.createElement('button');reject.textContent=s.state==='linked'?'关联有误':'舍弃建议';reject.onclick=()=>decideSuggestion(s.id,false);buttons.append(reject);if(s.state!=='linked'){const accept=document.createElement('button');accept.textContent=s.action==='new'?'确认新增事件':'确认修改事件';accept.onclick=()=>openSuggestion(s);buttons.append(accept)}card.append(name,fields,basis,buttons);section.append(card)}root.append(section)}
-async function refreshSuggestions(){try{aiSuggestions=await api('/sources/suggestions');aiSources=await api('/sources');renderSuggestions()}catch(e){/* Source configuration displays errors; keep existing view intact. */}}
+async function refreshSuggestions(){const run=++aiReadVersion;try{const [suggestions,sources]=await Promise.all([api('/sources/suggestions'),api('/sources')]);if(run!==aiReadVersion)return;aiSuggestions=suggestions;aiSources=sources;aiLoaded=true;aiError='';renderSuggestions();if(typeof loadUnmatched==='function')await loadUnmatched()}catch(e){if(run!==aiReadVersion)return;aiError=e.message}finally{if(run===aiReadVersion&&typeof renderChatResults==='function')renderChatResults()}}
 async function decideSuggestion(id,accept){try{const result=await api('/sources/suggestions/'+id,'POST',{accept});if(result.saved)finish(result.saved);await refreshSuggestions();render();notify('已核对并保存')}catch(e){notify(e.message+'；请核对操作结果，不会自动重试')}}
 setInterval(refreshSuggestions,10000);
 
@@ -79,7 +79,7 @@ async function confirmSuggestion() {
     const result=await api('/sources/suggestions/'+s.id,'POST',body);
     db.items=await api('/items');
     if(result.saved){const savedThing=get(result.saved.parent),savedModule=get(savedThing?.parent);selection.thing=savedThing?.id;selection.module=savedModule?.id;selection.goal=savedModule?.parent;}
-    $('#suggestionDrawer').close();await refreshSuggestions();render();notify('已保存并读回');
+    $('#suggestionDrawer').close();await refreshSuggestions();render();if(typeof loadWorkbench==='function')await loadWorkbench();notify('已保存并读回');
   } catch(e) {$('#suggestionError').textContent=e.message+'；输入已保留，核对后可再次确认同一建议，不会重复创建。';}
   finally {suggestionBusy=false;button.disabled=false;}
 }

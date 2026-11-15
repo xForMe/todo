@@ -16,7 +16,9 @@ from sqlalchemy.exc import IntegrityError
 from todo_backend.integrations.ai.client import AIError, Proposal, Proposals
 from todo_backend.modules.sources.message_receipts import receipts
 from todo_backend.modules.sources.recognition import analyze_source
+from todo_backend.modules.sources.recovery import retry_message, unmatched_messages
 from todo_backend.modules.sources.repository import sources, suggestions
+from todo_backend.modules.work.service import WorkError
 
 
 def page(*ids: str) -> str:
@@ -234,3 +236,93 @@ def test_pause_during_model_does_not_mark_processed(
     analyze_source(engine, sid)
     with engine.connect() as conn:
         assert not conn.execute(select(receipts)).all()
+
+
+def test_explicit_recovery_of_processed_empty_message(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "todo_backend.modules.sources.recognition.recognize",
+        lambda content, context: Proposals(suggestions=[]),
+    )
+    sid = add_source(engine, page("missing"))
+    analyze_source(engine, sid)
+    rows = unmatched_messages(engine, "personal")
+    assert len(rows) == 1 and rows[0]["processed"] and rows[0]["can_retry"]
+    assert unmatched_messages(engine, "other") == []
+    with pytest.raises(WorkError):
+        retry_message(engine, "other", sid, "missing", 1)
+    calls: list[str] = []
+
+    def recovered(content: str, context: str) -> Proposals:
+        calls.append(content)
+        return Proposals(
+            suggestions=[
+                Proposal(action="new", thing_id="", name="恢复行动", evidence="行动missing")
+            ]
+        )
+
+    monkeypatch.setattr("todo_backend.modules.sources.recognition.recognize", recovered)
+    assert "1 条" in retry_message(engine, "personal", sid, "missing", 1)
+    assert len(calls) == 1
+    assert unmatched_messages(engine, "personal") == []
+    with pytest.raises(WorkError):
+        retry_message(engine, "personal", sid, "missing", 1)
+    assert len(calls) == 1
+    with engine.connect() as conn:
+        assert len(conn.execute(select(receipts)).all()) == 1
+        assert conn.execute(select(suggestions.c.state)).scalar_one() == "pending"
+
+
+def test_recovery_empty_failure_and_paused(engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "todo_backend.modules.sources.recognition.recognize",
+        lambda content, context: Proposals(suggestions=[]),
+    )
+    sid = add_source(engine, page("empty"))
+    analyze_source(engine, sid)
+    assert "0 条" in retry_message(engine, "personal", sid, "empty", 1)
+    with pytest.raises(WorkError):
+        retry_message(engine, "personal", sid, "empty", 1)
+
+    def fail(content: str, context: str) -> Proposals:
+        raise AIError("模拟失败")
+
+    monkeypatch.setattr("todo_backend.modules.sources.recognition.recognize", fail)
+    with pytest.raises(WorkError, match="模拟失败"):
+        retry_message(engine, "personal", sid, "empty", 2)
+    assert not unmatched_messages(engine, "personal")[0]["can_retry"]
+    with pytest.raises(WorkError):
+        retry_message(engine, "personal", sid, "empty", 4)
+
+
+def test_discard_removes_text_and_survives_new_source(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from todo_backend.modules.sources.discarding import discard_message, filtered_content
+
+    sid = add_source(engine, page("ignore", "keep"))
+    with pytest.raises(WorkError):
+        discard_message(engine, "other", sid, "ignore", 1)
+    with pytest.raises(WorkError):
+        discard_message(engine, "personal", sid, "ignore", 9)
+    assert "已废弃" in discard_message(engine, "personal", sid, "ignore", 1)
+    assert "已废弃" in discard_message(engine, "personal", sid, "ignore", 1)
+    with engine.connect() as conn:
+        saved = conn.execute(select(sources.c.content).where(sources.c.id == sid)).scalar_one()
+        assert "行动ignore" not in saved and "行动keep" in saved
+        cleaned = filtered_content(conn, "personal", "oc_test", page("ignore", "keep"))
+        assert "行动ignore" not in cleaned and "行动keep" in cleaned
+        assert "行动ignore" in filtered_content(conn, "other", "oc_test", page("ignore"))
+    with engine.begin() as conn:
+        conn.execute(update(sources).where(sources.c.id == sid).values(removed=True, enabled=False))
+    fresh = add_source(engine, page("ignore"))
+    assert unmatched_messages(engine, "personal") == []
+
+    def unexpected(content: str, context: str) -> Proposals:
+        pytest.fail("Discarded message must never reach model")
+
+    monkeypatch.setattr("todo_backend.modules.sources.recognition.recognize", unexpected)
+    analyze_source(engine, fresh)
+    with pytest.raises(WorkError):
+        retry_message(engine, "personal", fresh, "ignore", 1)

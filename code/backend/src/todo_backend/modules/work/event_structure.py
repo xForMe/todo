@@ -10,7 +10,9 @@ from sqlalchemy import delete, insert, select
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import SQLAlchemyError
 
-from todo_backend.modules.work.event_repository import branches, links, receipts
+from todo_backend.modules.work import event_dependencies
+from todo_backend.modules.work.daily_review import beijing_now
+from todo_backend.modules.work.event_repository import branches, links, predecessors, receipts
 from todo_backend.modules.work.repository import deletions, items, read_item
 from todo_backend.modules.work.schemas import ItemInput, ItemOutput
 from todo_backend.modules.work.service import WorkError
@@ -22,10 +24,11 @@ class EventAction(BaseModel):
     model_config = ConfigDict(extra="forbid")
     operation_id: UUID
     snapshot: str = Field(min_length=64, max_length=64)
-    action: Literal["children", "followup", "link", "unlink"]
+    action: Literal["children", "followup", "link", "unlink", "predecessors"]
     children: list[ItemInput] = Field(default_factory=list, max_length=20)
     target: str = ""
     kind: Literal["related", "followup"] = "related"
+    predecessor_ids: list[UUID] = Field(default_factory=list, max_length=50)
 
 
 def event(conn: Connection, account: str, event_id: str) -> ItemOutput:
@@ -62,11 +65,20 @@ def state(conn: Connection, account: str, event_id: str) -> dict[str, object]:
             select(links).where(links.c.account == account, links.c.source.in_(ids))
         ).mappings()
     ]
+    dependencies = [
+        dict(r)
+        for r in conn.execute(
+            select(predecessors.c.event_id, predecessors.c.predecessor_id)
+            .where(predecessors.c.account == account, predecessors.c.event_id.in_(ids))
+            .order_by(predecessors.c.event_id, predecessors.c.predecessor_id)
+        ).mappings()
+    ]
     raw = json.dumps(
         [
             sorted([dict(r) for r in rows], key=lambda r: r["id"]),
             sorted(tree, key=lambda r: str(r["child_id"])),
             sorted(relations, key=lambda r: str(r["id"])),
+            dependencies,
         ],
         sort_keys=True,
     )
@@ -78,6 +90,8 @@ def state(conn: Connection, account: str, event_id: str) -> dict[str, object]:
         "snapshot": hashlib.sha256(raw.encode()).hexdigest(),
         "branches": tree,
         "links": relations,
+        "dependencies": dependencies,
+        "today": beijing_now().date().isoformat(),
     }
 
 
@@ -155,7 +169,13 @@ def receipt(engine: Engine, account: str, operation_id: str) -> dict[str, object
 
 def mutate(engine: Engine, account: str, event_id: str, data: EventAction) -> dict[str, object]:
     """Atomically create children or change a relation, then read receipt."""
-    fingerprint = json.dumps([event_id, data.model_dump(mode="json")], sort_keys=True)
+    payload = data.model_dump(mode="json")
+    if data.action != "predecessors":
+        if data.predecessor_ids:
+            raise WorkError(422, "该操作不能写入前置事件")
+        # Previously committed event operations must keep the same fingerprint.
+        payload.pop("predecessor_ids")
+    fingerprint = json.dumps([event_id, payload], sort_keys=True)
     op = str(data.operation_id)
     try:
         with engine.begin() as conn:
@@ -203,6 +223,15 @@ def mutate(engine: Engine, account: str, event_id: str, data: EventAction) -> di
                                 id=child_id, account=account, version=1, **child.model_dump()
                             )
                         )
+                        from todo_backend.modules.work.plan_history import initialize
+                        from todo_backend.modules.work.schemas import ItemOutput
+
+                        initialize(
+                            conn,
+                            account,
+                            ItemOutput(id=child_id, version=1, **child.model_dump()),
+                            False,
+                        )
                         if data.action == "children":
                             conn.execute(
                                 insert(branches).values(
@@ -240,6 +269,10 @@ def mutate(engine: Engine, account: str, event_id: str, data: EventAction) -> di
                             target=target.id,
                             kind=data.kind,
                         )
+                    )
+                elif data.action == "predecessors":
+                    event_dependencies.replace(
+                        conn, account, parent, [str(value) for value in data.predecessor_ids]
                     )
                 else:
                     relation = (

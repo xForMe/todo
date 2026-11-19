@@ -27,6 +27,11 @@ function wbSetScope(id) {
   drawWorkbench();
 }
 
+function wbToggleGoalScope(id) {
+  wbSetScope(wbScope === id ? '' : id);
+  document.getElementById(`wbGoalFilter-${id}`)?.focus();
+}
+
 function wbRenderHeading(goals) {
   const date = document.getElementById('workspaceDate');
   if (date && wbSnapshot) date.textContent = wbSnapshot.today;
@@ -38,6 +43,13 @@ function wbRenderOverview(goals, matters) {
   return `<div class="wbSectionTitle"><h2>目标概览</h2></div><div class="wbOverview">${goals.map(g => {
     const ms = matters.filter(m => wbPath(m).goal.id === g.id);
     const modules = wbItems().filter(x => x.type === 'module' && x.parent === g.id).length;
-    return `<button class="wbGoal" onclick="wbSetScope('${g.id}')" aria-label="筛选目标：${esc(g.name)}"><span class="wbGoalTitle"><strong>${esc(g.name)}</strong>${wbIcon('arrow')}</span><span class="wbGoalStats"><span><b>${modules}</b> 模块</span><span><b>${ms.length}</b> 事情</span><span><b>${ms.filter(x => x.status === 'completed').length}</b> 已完成事情</span></span></button>`;
+    const id = esc(g.id), name = esc(g.name), selected = wbScope === g.id;
+    return `<div class="wbGoal${selected ? ' active' : ''}">
+      <button type="button" class="wbGoalFilter" id="wbGoalFilter-${id}" value="${id}" aria-label="筛选目标：${name}" aria-pressed="${selected}" onclick="wbToggleGoalScope(this.value)">
+        <strong class="wbGoalTitle">${name}</strong>
+        <span class="wbGoalStats"><span><b>${modules}</b> 模块</span><span><b>${ms.length}</b> 事情</span><span><b>${ms.filter(x => x.status === 'completed').length}</b> 已完成事情</span></span>
+      </button>
+      <button type="button" class="wbGoalLink" value="${id}" title="跳转到目标与事情" aria-label="跳转到目标与事情：${name}" onclick="locateWorkbench(this.value)" ${wbLoading ? 'disabled' : ''}>${wbIcon('arrow')}</button>
+    </div>`;
   }).join('') || '<div class="empty"><b>暂无目标</b><button class="primary" onclick="showWorkbench(\'work\')">前往目标与事情</button></div>'}</div>`;
 }

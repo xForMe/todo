@@ -1,0 +1,48 @@
+/* TECH-024: reuse the workspace's spacing, colors and text tokens. */
+.imageSettingsHead{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);margin-bottom:var(--space-4)}
+.imageSettingsHead h3{margin:0;font-size:var(--text-sm)}
+.imageTools{display:flex;align-items:center;gap:var(--space-2)}
+.imageIcon{display:inline-flex;align-items:center;justify-content:center;width:var(--space-10);height:var(--space-10);min-height:var(--space-10);padding:var(--space-2);border-color:transparent;color:var(--accent);background:transparent;flex:none}
+.imageIcon.primary{color:var(--white)}
+.imageConfigFields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-4)}
+.imageConfigFields label{display:grid;gap:var(--space-1);min-width:0;margin:0;font-size:var(--text-xs)}
+.imageConfigFields input{width:100%;min-width:0;margin:0}
+.imageConfigStatus{margin-top:var(--space-4);border-top:1px solid var(--line);padding-top:var(--space-3);display:grid;gap:var(--space-2);font-size:var(--text-xs)}
+.imageConfigStatus p{margin:0;display:flex;justify-content:space-between;gap:var(--space-2)}
+.imageHelp{font-size:var(--text-xs);color:var(--muted);margin:var(--space-2) 0}
+.imageError{white-space:pre-wrap;overflow-wrap:anywhere;font-size:var(--text-xs)}
+#imageDrawer .imageBody{padding:var(--space-4);display:grid;gap:var(--space-3)}
+.imageContext{background:var(--bg);padding:var(--space-2) var(--space-3);border-radius:var(--radius-sm);overflow-wrap:anywhere;font-size:var(--text-sm)}
+.imageGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--space-3)}
+.imageCard{min-width:0;border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden}
+.imageThumb{display:block;width:100%;height:100px;min-height:0;border:0;border-radius:0;padding:0;background:var(--bg)}
+.imageThumb img{width:100%;height:100%;object-fit:cover;display:block}
+.imageCaption{padding:var(--space-2);font-size:var(--text-xs);overflow-wrap:anywhere}
+.imageCaption p{margin:var(--space-1) 0}.imageCaption button{font-size:var(--text-xs);padding:var(--space-1) var(--space-2);min-height:var(--space-8)}
+#imageViewer{inset:0;margin:auto;width:min(960px,calc(100vw - 24px));height:auto;max-height:calc(100dvh - 24px);padding:0}
+#imageViewer img{display:block;width:100%;max-height:75dvh;object-fit:contain;background:var(--bg)}
+#imageViewer h2{overflow-wrap:anywhere;min-width:0;font-size:var(--text-sm)}
+@media(max-width:600px){.imageConfigFields{grid-template-columns:1fr}.imageGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.imageIcon{width:44px;height:44px;min-height:44px}.imageConfigStatus p{flex-wrap:wrap}}
+
+.imageContext{white-space:pre-line}
+
+/* The attachment strip fits below the original description and follow-up fields. */
+.imageWrap { flex-wrap:wrap; }
+.imageWrap kbd { font-size:var(--text-xs); color:var(--muted); }
+.inlineImageEntry { display:grid; gap:var(--space-1); margin:var(--space-2) 0; }
+.inlineImageEntry .inlineImagePaste { width:auto; }
+.inlineImageEntry button { font-size:var(--text-xs); }
+.inlineImagePreview { display:flex; flex-wrap:wrap; gap:var(--space-2); }
+.inlineImagePreview span { display:flex; align-items:center; gap:var(--space-1); }
+.inlineImagePreview img { width:48px; height:48px; object-fit:cover; border-radius:var(--radius-sm); }
+.inlineImageEntry p:empty, .inlineImagePreview:empty { display:none; }
+.imagePick, .imageCandidateTitle { display:flex; align-items:center; gap:var(--space-2); margin:0; }
+.imagePick input, .imageCandidateTitle input[type=checkbox] { flex:none; }
+.imageCandidate { border-top:1px solid var(--line); padding:var(--space-2) 0; }
+.imageCandidate details { margin-top:var(--space-1); }
+#imageAnalysis { border-top:1px solid var(--line); padding-top:var(--space-3); }
+#eventDrawer .drawerHead .eventImagesEntry { margin-left:auto; }
+#imageDrawer .imageBody > h3, #imageAnalysis h3 { margin:0; font-size:var(--text-sm); }
+#imageDrawer .imageBody > p { margin:0; }
+#imageDrawer .imageBody > :empty { display:none; }
+#imageDrawer .drawerHead { position:sticky; top:0; z-index:1; background:var(--surface); }

@@ -118,4 +118,40 @@ def discard_message(engine: Engine, account: str, sid: str, mid: str, version: i
         saved = conn.execute(select(sources.c.content).where(sources.c.id == sid)).scalar_one()
         if mid in chat_messages(saved):
             raise RuntimeError("废弃结果读回失败")
+        from todo_backend.modules.memory.repository import candidates, jobs
+
+        related_sources = select(sources.c.id).where(
+            sources.c.account == account, sources.c.address == src["address"]
+        )
+        affected = (
+            conn.execute(
+                select(candidates.c.module_id).where(
+                    candidates.c.account == account,
+                    candidates.c.source_id.in_(related_sources),
+                    candidates.c.message_id == mid,
+                )
+            )
+            .scalars()
+            .all()
+        )
+        conn.execute(
+            update(candidates)
+            .where(
+                candidates.c.account == account,
+                candidates.c.source_id.in_(related_sources),
+                candidates.c.message_id == mid,
+            )
+            .values(body="", state="invalid")
+        )
+        # Physical deletion targets only source-derived vectors, never formal business records.
+        from sqlalchemy import delete, text
+
+        for module_id in affected:
+            conn.execute(
+                text("DELETE FROM memory_vectors WHERE account=:a AND module_id=:m"),
+                {"a": account, "m": module_id},
+            )
+            conn.execute(
+                delete(jobs).where(jobs.c.account == account, jobs.c.module_id == module_id)
+            )
         return "已废弃，本地原文已删除，此消息不会再次识别"

@@ -6,9 +6,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 
+from todo_backend.modules.work import daily_follow_up
 from todo_backend.modules.work.attention import AttentionInput, save_attention
+from todo_backend.modules.work.daily_review import ReviewInput, ReviewOutput, receipt, save_review
 from todo_backend.modules.work.deletion import DeleteInput
 from todo_backend.modules.work.priority_service import PriorityInput
 from todo_backend.modules.work.repository import deletions, items, operations, read_item
@@ -53,6 +55,68 @@ def account(request: Request) -> str:
 Identity = Annotated[str, Depends(account)]
 
 
+@router.get("/items/{item_id}/daily-follow-ups")
+def daily_follow_view(item_id: str, request: Request, identity: Identity) -> dict[str, object]:
+    """Read the scoped current action and today's append-only follow-ups."""
+    try:
+        with request.app.state.engine.connect() as conn, conn.begin():
+            return daily_follow_up.view(conn, identity, item_id)
+    except WorkError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
+
+
+@router.post("/items/{item_id}/daily-follow-ups")
+def daily_follow_save(
+    item_id: str, data: daily_follow_up.FollowInput, request: Request, identity: Identity
+) -> daily_follow_up.FollowOutput:
+    """Save one explicit follow-up and a source-verified postponement atomically."""
+    try:
+        return daily_follow_up.save(request.app.state.engine, identity, item_id, data)
+    except WorkError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
+
+
+@router.get("/daily-follow-up-operations/{operation_id}")
+def daily_follow_receipt(
+    operation_id: str, request: Request, identity: Identity
+) -> daily_follow_up.FollowOutput:
+    """Resolve an uncertain follow-up without invoking the model again."""
+    try:
+        with request.app.state.engine.connect() as conn:
+            return daily_follow_up.receipt(conn, identity, operation_id)
+    except WorkError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
+
+
+@router.get("/items/{item_id}/plan-history")
+def plan_history(item_id: str, request: Request, identity: Identity) -> dict[str, object]:
+    """Read date history only for the authenticated visible object."""
+    from todo_backend.modules.work.plan_history import history
+
+    try:
+        with request.app.state.engine.connect() as conn, conn.begin():
+            return history(conn, identity, item_id)
+    except WorkError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
+
+
+@router.get("/plan-history-counts")
+def plan_counts(request: Request, identity: Identity) -> dict[str, int]:
+    """Return account-scoped nonzero history counts for title badges."""
+    from todo_backend.modules.work.plan_history import changes
+
+    with request.app.state.engine.connect() as conn:
+        visible = select(items.c.id).where(
+            items.c.account == identity, items.c.id.not_in(select(deletions.c.item_id))
+        )
+        rows = conn.execute(
+            select(changes.c.item_id, func.count())
+            .where(changes.c.account == identity, changes.c.item_id.in_(visible))
+            .group_by(changes.c.item_id)
+        )
+        return {str(row[0]): int(row[1]) for row in rows}
+
+
 @router.get("/workbench")
 def workbench_snapshot(request: Request, identity: Identity) -> dict[str, object]:
     """Return the authenticated account's global snapshot."""
@@ -85,6 +149,27 @@ def list_items(request: Request, identity: Identity) -> list[ItemOutput]:
             ItemOutput.model_validate({k: v for k, v in row.items() if k != "account"})
             for row in rows
         ]
+
+
+@router.post("/items/{item_id}/daily-review", response_model=ReviewOutput)
+def daily_review_write(
+    item_id: str, data: ReviewInput, request: Request, identity: Identity
+) -> ReviewOutput:
+    """Mark or undo one explicitly reviewed action."""
+    try:
+        return save_review(request.app.state.engine, identity, item_id, data)
+    except WorkError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
+
+
+@router.get("/daily-review-operations/{operation_id}", response_model=ReviewOutput)
+def daily_review_receipt(operation_id: str, request: Request, identity: Identity) -> ReviewOutput:
+    """Read an account-scoped immutable review receipt."""
+    try:
+        with request.app.state.engine.connect() as conn:
+            return receipt(conn, identity, operation_id)
+    except WorkError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
 
 
 @router.post("/items", response_model=ItemOutput)

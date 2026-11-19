@@ -9,9 +9,13 @@ description = "To Do backend engineering scaffold"
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "alembic>=1.14,<2",
+    "cos-python-sdk-v5>=1.9.45",
+    "cryptography>=50.0.2",
     "fastapi>=0.115,<1",
+    "pillow>=13.0.0",
     "psycopg[binary]>=3.2,<4",
     "pydantic>=2.10,<3",
+    "python-multipart>=0.0.34",
     "sqlalchemy>=2.0,<2.1",
     "uvicorn>=0.34,<1",
 ]
@@ -43,3 +47,7 @@ files = ["src", "tests", "../scripts"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
+
+[[tool.mypy.overrides]]
+module = ["qcloud_cos", "qcloud_cos.*"]
+ignore_missing_imports = true

@@ -6,6 +6,11 @@ from todo_backend.api.work import Identity
 from todo_backend.modules.work import event_move
 from todo_backend.modules.work import event_structure as service
 from todo_backend.modules.work.decomposition import Candidates, GenerateInput, generate
+from todo_backend.modules.work.predecessor_recommendation import (
+    Recommendation,
+    RecommendationInput,
+    recommend,
+)
 from todo_backend.modules.work.service import WorkError
 
 router = APIRouter(prefix="/api")
@@ -38,7 +43,9 @@ def move_event(
 def structure(event_id: str, request: Request, identity: Identity) -> dict[str, object]:
     """Return a scoped review snapshot."""
     try:
-        with request.app.state.engine.connect() as conn:
+        with request.app.state.engine.begin() as conn:
+            if conn.dialect.name == "sqlite":
+                conn.exec_driver_sql("BEGIN")
             return service.state(conn, identity, event_id)
     except WorkError as exc:
         raise HTTPException(exc.status, exc.message) from exc
@@ -71,5 +78,16 @@ def decomposition(
     """Generate candidates only after explicit context consent."""
     try:
         return generate(request.app.state.engine, identity, event_id, data)
+    except WorkError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
+
+
+@router.post("/events/{event_id}/predecessor-recommendations")
+def predecessor_recommendations(
+    event_id: str, data: RecommendationInput, request: Request, identity: Identity
+) -> list[Recommendation]:
+    """Recommend existing prerequisites after the user opens the picker."""
+    try:
+        return recommend(request.app.state.engine, identity, event_id, data)
     except WorkError as exc:
         raise HTTPException(exc.status, exc.message) from exc

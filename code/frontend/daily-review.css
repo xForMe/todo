@@ -1,0 +1,19 @@
+/* TECH-023: a compact centered follow-up dialog, overriding the shared drawer. */
+#dailyFollowDialog { margin:auto; width:min(560px,calc(100vw - 24px)); max-width:calc(100vw - 24px); height:fit-content; animation:none; scroll-padding-bottom:0; max-height:calc(100dvh - 32px); padding:0; inset:0; border:1px solid var(--line); border-radius:var(--radius-md); background:var(--surface); }
+#dailyFollowDialog .dailyHead { position:sticky; top:0; z-index:1; display:flex; align-items:center; justify-content:space-between; gap:var(--space-2); padding:var(--space-2) var(--space-4); border-bottom:1px solid var(--line); background:var(--surface); }
+#dailyFollowDialog h2,#dailyFollowDialog h3 { margin:0; font-size:var(--text-sm); }
+#dailyFollowDialog .dailyHeadActions { display:flex; gap:var(--space-2); }
+#dailyFollowDialog .dailyHeadActions button { width:36px; min-width:36px; height:36px; min-height:36px; padding:var(--space-2); display:inline-flex; align-items:center; justify-content:center; }
+#dailyFollowDialog .dailyBody { padding:var(--space-4); display:grid; gap:var(--space-2); }
+#dailyFollowDialog #dailyContext { padding:var(--space-2) var(--space-3); background:var(--surface-raised); border-radius:var(--radius-sm); overflow-wrap:anywhere; }
+#dailyFollowDialog p,#dailyFollowDialog label { margin:0; }
+#dailyFollowDialog #dailyContext p,#dailyFollowDialog small,#dailyFollowDialog time { color:var(--muted); font-size:var(--text-xs); }
+#dailyFollowDialog #dailyContent { width:100%; min-height:88px; margin:0; resize:vertical; }
+#dailyFollowDialog #dailyRecords { max-height:200px; overflow:auto; }
+#dailyFollowDialog .dailyEntry { border-left:2px solid var(--line); padding-left:var(--space-3); margin-top:var(--space-2); }
+#dailyFollowDialog .dailyEntry p { white-space:pre-wrap; overflow-wrap:anywhere; }
+#dailyFollowDialog .dailyEntry small { display:block; }
+#dailyFollowDialog #dailyResult { white-space:pre-wrap; overflow-wrap:anywhere; }
+#dailyFollowDialog .dailyRecovery { display:flex; flex-wrap:wrap; gap:var(--space-2); }
+#dailyFollowDialog .dailyRecovery:has(>button:not([hidden])) { padding-bottom:var(--space-2); }
+@media(max-width:600px) { #dailyFollowDialog .dailyBody { padding:var(--space-3); } #dailyFollowDialog .dailyHead { padding:var(--space-2) var(--space-3); } }

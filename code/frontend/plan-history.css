@@ -1,0 +1,21 @@
+/* Component aliases reuse the project's primitive and semantic token layers. */
+:root{--plan-mark-bg:var(--accent-soft);--plan-mark-color:var(--accent);--plan-mark-radius:var(--radius-sm)}
+.planMark{display:inline-flex;align-items:center;gap:var(--space-1);padding:var(--space-1);font-size:var(--text-xs);border:0;background:var(--plan-mark-bg);color:var(--plan-mark-color);border-radius:var(--plan-mark-radius);vertical-align:middle}
+.planMark .icon{width:var(--space-4);height:var(--space-4)}
+.planMark{min-height:0;height:var(--space-6);line-height:1}
+.planTitleWrap{display:flex;align-items:center;gap:var(--space-1);min-width:0;grid-column:1;grid-row:1}.planTitleWrap .wbTitle{min-width:0;overflow-wrap:anywhere}.planTitleWrap .planMark{flex:none}
+
+.planDelay{display:inline-flex;align-items:center;justify-content:center;flex:none;width:var(--space-8);height:var(--space-8);padding:var(--space-1);border-color:transparent;color:var(--muted);vertical-align:middle}
+.planDelay .icon{width:var(--space-4);height:var(--space-4)}
+.planDelay:hover{color:var(--accent);background:var(--accent-soft)}
+.wbActionRow .wbMeta{align-items:center}
+.wbActionRow .dailyAction{grid-row:1;align-self:center}
+/* SRC-UI-014: compact metadata without shrinking text or the review hit area. */
+.wbActionRow .planDelay{min-height:var(--space-8)}
+@media(max-width:768px){.wbActionRow .dailyAction{grid-row:1 / 3}}
+#planDrawer #planBody{padding:var(--space-4);overflow-wrap:anywhere}
+#planDrawer .fieldGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+#planDrawer .planRecord{border-left:2px solid var(--line);padding:var(--space-3);margin-top:var(--space-3)}
+#planDrawer details{margin-top:var(--space-6);border-top:1px solid var(--line);padding-top:var(--space-4)}
+#planDrawer summary{cursor:pointer;font-weight:600}
+@media(max-width:768px){#planDrawer .fieldGrid{grid-template-columns:1fr}}

@@ -1,4 +1,4 @@
-"""UAIAPI chat completion adapter with validated, nonexecutable output."""
+"""Compatible chat completion adapter with validated, nonexecutable output."""
 
 import json
 import os
@@ -7,11 +7,44 @@ from typing import Literal
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+
+from todo_backend.integrations.ai.endpoint import ModelTarget, direct_opener
 
 
 class AIError(Exception):
     """A safe model failure, without response text or credentials."""
+
+
+class MemoryRef(BaseModel):
+    """An explicit model-reported citation, requiring server-side verification."""
+
+    module_id: str = Field(max_length=36)
+    revision: int = Field(ge=1)
+
+
+class MemoryDraft(BaseModel):
+    """A proposed stable module fact; never active before human confirmation."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    module_id: str = Field(min_length=1, max_length=36)
+    kind: Literal["module_profile", "alias"]
+    description: str = Field(default="", max_length=1000)
+    aliases: list[str] = Field(default_factory=list, max_length=5)
+    evidence: str = Field(min_length=4, max_length=300)
+    reason: str = Field(min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_fact(self) -> "MemoryDraft":
+        """Reject oversized aliases or a draft lacking its declared fact."""
+        self.aliases = list(dict.fromkeys(alias.strip() for alias in self.aliases))
+        if any(not alias or len(alias) > 80 for alias in self.aliases):
+            raise ValueError("简称须为1至80字")
+        if (self.kind == "alias" and not self.aliases) or (
+            self.kind == "module_profile" and not self.description
+        ):
+            raise ValueError("候选内容不完整")
+        return self
 
 
 class Proposal(BaseModel):
@@ -25,6 +58,7 @@ class Proposal(BaseModel):
     new_module_name: str = Field(default="", max_length=120)
     new_thing_name: str = Field(default="", max_length=120)
     placement_reason: str = Field(default="", max_length=500)
+    memory_refs: list[MemoryRef] = Field(default_factory=list, max_length=5)
     name: str = Field(min_length=1, max_length=120)
     evidence: str = Field(min_length=1, max_length=2000)
     owner: str = Field(default="", max_length=80)
@@ -44,13 +78,11 @@ class Proposals(BaseModel):
     """A bounded recognition response."""
 
     suggestions: list[Proposal] = Field(max_length=20)
+    memory_candidates: list[MemoryDraft] = Field(default_factory=list, max_length=5)
 
 
-def recognize(content: str, context: str) -> Proposals:
+def recognize(content: str, context: str, target: ModelTarget | None = None) -> Proposals:
     """Call the user-selected model once, without provider retries."""
-    key = os.environ.get("TODO_UAIAPI_KEY", "")
-    if not key:
-        raise AIError("AI 密钥未配置")
     if len(content) + len(context) > 30000:
         raise AIError("材料超过当前识别上限，请缩小来源范围")
     instructions = (
@@ -84,43 +116,67 @@ def recognize(content: str, context: str) -> Proposals:
         "最多输出10条高优先级行动。owner、plan_end必须是字符串，未知用空字符串不可用null。"
         "new的event_id必须为null。evidence引用短原文，单条最多300字。"
     )
+    if os.environ.get("TODO_MEMORY_ENABLED") == "1":
+        instructions += (
+            "另可返回memory_candidates数组（最多5项，无明确稳定事实时为空）。只提取原文明确的"
+            "既有模块职责或项目简称，不从一次会议、催办、负责人或任务归属推导长期规则。"
+            "每项字段module_id,kind(module_profile|alias),description,aliases,evidence,reason；"
+            "module_id必须来自给定业务目录或辅助模块记忆；evidence为4至300字连续原文。"
+            "aliases最多5个、各80字，必须逐个出现在evidence；description最多1000字，reason最多200字。"
+            "memory_candidates只是待确认，不可用来支持本轮行动归属。"
+            "每个suggestion可返回memory_refs数组（最多5项），仅在明确采用辅助模块记忆时"
+            "填写其中给定的module_id与revision；没有采用返回空数组，不引用候选或猜测版本。"
+        )
     try:
-        return Proposals.model_validate(call_json(instructions, content, context))
+        return Proposals.model_validate(call_json(instructions, content, context, target))
     except ValidationError as exc:
         raise AIError("模型输出不符合约定，未写入建议") from exc
 
 
-def call_json(instructions: str, content: str, context: str) -> object:
+def call_json(
+    instructions: str, content: str, context: str, target: ModelTarget | None = None
+) -> object:
     """Call the configured provider once and return nonexecutable JSON."""
-    key = os.environ.get("TODO_UAIAPI_KEY", "")
-    if not key:
+    key = target.key if target else os.environ.get("TODO_UAIAPI_KEY", "")
+    if not target and not key:
         raise AIError("AI 密钥未配置")
     if len(content) + len(context) > 30000:
         raise AIError("材料超过当前识别上限")
-    body = json.dumps(
+    return request_json(
         {
-            "model": os.environ.get("TODO_AI_MODEL", "deepseek-v4-flash-ga-260731"),
+            "model": (
+                target.model
+                if target
+                else os.environ.get("TODO_AI_MODEL", "deepseek-v4-flash-ga-260731")
+            ),
             "messages": [
                 {"role": "system", "content": instructions},
                 {"role": "user", "content": "工作范围：" + context + "\n资料：" + content},
             ],
             "stream": False,
             "max_tokens": 4096,
-            "thinking": {"type": "disabled"},
+            **({} if target else {"thinking": {"type": "disabled"}}),
             "response_format": {"type": "json_object"},
-        }
-    ).encode()
+        },
+        key,
+        *((target.base_url,) if target else ()),
+    )
+
+
+def request_json(payload: dict[str, object], key: str, base_url: str = "") -> object:
+    """Send one bounded chat request to the selected compatible service."""
     request = Request(
-        "https://api.uaiapi.com/v1/chat/completions",
-        body,
+        (base_url or "https://api.uaiapi.com/v1") + "/chat/completions",
+        json.dumps(payload).encode(),
         {
-            "Authorization": "Bearer " + key,
+            **({"Authorization": "Bearer " + key} if key else {}),
             "Content-Type": "application/json",
             "User-Agent": "todo-workspace/0.3",
         },
     )
     try:
-        with urlopen(request, timeout=120) as response:
+        open_request = direct_opener().open if base_url else urlopen
+        with open_request(request, timeout=120) as response:
             raw = response.read(1_000_001)
         if len(raw) > 1_000_000:
             raise AIError("模型响应超过上限")

@@ -12,5 +12,8 @@ def offline_defaults(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterato
     """Prevent health-only tests or workers from reaching configured production data."""
     monkeypatch.setenv("TODO_DATABASE_URL", "sqlite:///" + (tmp_path / "default.db").as_posix())
     monkeypatch.setenv("TODO_SOURCE_READER", "0")
+    monkeypatch.setenv("TODO_MEMORY_ENABLED", "0")
+    monkeypatch.setenv("TODO_EMBEDDING_CONSENT", "0")
+    monkeypatch.setenv("TODO_EMBEDDING_SOURCE_CONSENT", "0")
     yield
     clean_schemas()

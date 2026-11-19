@@ -1,0 +1,91 @@
+/* REQ-F-020: compact event dependencies and anchor-positioned waiting details. */
+:root {
+  --dependency-wait-background: var(--warning-soft);
+  --dependency-wait-text: var(--warning);
+  --dependency-edge: var(--line);
+}
+
+.dependencyWait, .dependencyShortcut {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  min-height: var(--space-6);
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+}
+.dependencyWait, .dependencyWait:hover, .dependencyWait[aria-expanded=true] {
+  background: var(--dependency-wait-background);
+  border-color: transparent;
+  color: var(--dependency-wait-text);
+}
+.dependencyShortcut {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+.eventActions > .dependencyShortcut {
+  justify-content: center;
+}
+.dependencyWait .icon, .dependencyShortcut .icon {
+  width: var(--space-4);
+  height: var(--space-4);
+}
+.dependencyWaitPopover {
+  position: fixed;
+  z-index: 50;
+  width: min(17.5rem, calc(100vw - var(--space-4)));
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--dependency-edge);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+  color: var(--text);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+.dependencyWaitPopover ul {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-4);
+}
+.dependencyPanel {
+  border-top: 1px solid var(--dependency-edge);
+  padding: var(--space-3) 0;
+}
+.dependencyPanel [hidden] { display: none; }
+#eventDrawer[data-mode=detail] .iconButton { border: 0; }
+#eventDrawer[data-mode=detail] .iconButton:not(:hover):not([aria-expanded=true]) {
+  background: transparent;
+}
+.dependencyHeading, .dependencyLine {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+}
+.dependencyHeading h3 { margin: 0; }
+.dependencyLine { padding: var(--space-1) 0; }
+.dependencyLine > div { min-width: 0; overflow-wrap: anywhere; }
+.dependencyLine small { display: block; color: var(--muted); }
+.dependencyLine button { flex: none; }
+.dependencyLine .dependencyName {
+  background: transparent;
+  border: 0;
+  padding-left: 0;
+  text-align: start;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.dependencyOptions, .dependencyAI, .dependencyManual {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.dependencyAI {
+  padding: var(--space-2);
+  border: 1px solid var(--dependency-edge);
+  border-radius: var(--radius-sm);
+}
+.dependencyAI p, .dependencyPanel .error { margin: 0; }
+.dependencyAI p:empty, .dependencyPanel .error:empty { display: none; }
+.dependencyManual select { flex: 1; min-width: 0; }

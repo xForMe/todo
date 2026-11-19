@@ -10,6 +10,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from todo_backend.integrations.feishu_cli.reader import ReadFailure, read_source
+from todo_backend.modules.memory.invalidation import invalidate_changed_evidence
+from todo_backend.modules.memory.service import lock_account
 from todo_backend.modules.sources.discarding import filtered_content
 from todo_backend.modules.sources.follow import send_due
 from todo_backend.modules.sources.recognition import analyze_source
@@ -57,20 +59,28 @@ def poll_sources(engine: Engine) -> None:
     except ReadFailure as exc:
         values = {"status": str(exc), "enabled": False, "version": row["version"] + 1}
     with engine.begin() as conn:
+        # Maintain existing proofs even when new memory generation is switched off.
+        lock_account(conn, str(row["account"]))
         if row["kind"] == "chat" and "content" in values:
             values["content"] = filtered_content(
                 conn, str(row["account"]), str(row["address"]), str(values["content"])
             )
-        conn.execute(
+        saved = conn.execute(
             update(sources)
             .where(
                 sources.c.id == row["id"],
                 sources.c.version == row["version"],
+                sources.c.content == row["content"],
+                sources.c.next_run == now + row["interval"],
                 sources.c.enabled.is_(True),
                 sources.c.removed.is_(False),
             )
             .values(**values)
         )
+        if saved.rowcount != 1:
+            return
+        if "content" in values:
+            invalidate_changed_evidence(conn, row, str(values["content"]))
 
     analyze_source(engine, str(row["id"]))
 

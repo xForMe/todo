@@ -60,7 +60,6 @@ class RuleInput(BaseModel):
     at: str = "09:00"
     cap: int = Field(default=3, ge=1, le=10)
     enabled: bool = False
-    verified: bool = False
     expected_version: int = 0
     event_version: int
 
@@ -94,7 +93,7 @@ def list_rules(engine: Engine, account: str) -> list[dict[str, object]]:
 def save_rule(engine: Engine, account: str, event_id: str, data: RuleInput) -> dict[str, object]:
     """Verify event scope and state before persisting explicit approval."""
     if not re.fullmatch(r"ou_[A-Za-z0-9]+", data.recipient):
-        raise WorkError(422, "请填写已核实的责任人 open_id")
+        raise WorkError(422, "请选择有效的事件负责人")
     if not re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", data.at):
         raise WorkError(422, "发送时间须为 HH:MM")
     with engine.begin() as conn:
@@ -104,12 +103,9 @@ def save_rule(engine: Engine, account: str, event_id: str, data: RuleInput) -> d
         if event.version != data.event_version:
             raise WorkError(409, "事件已变化，请重新核实")
         if data.enabled and (
-            not data.verified
-            or not event.owner
-            or not event.planEnd
-            or event.status in {"completed", "cancelled"}
+            not event.owner or not event.planEnd or event.status in {"completed", "cancelled"}
         ):
-            raise WorkError(422, "请核实责任人和结束日期，只能为未完成事件开启催办")
+            raise WorkError(422, "请设置责任人和结束日期，只能为未完成事件开启催办")
         row = conn.execute(select(rules).where(rules.c.event_id == event_id)).mappings().first()
         version = row["version"] if row else 0
         if version != data.expected_version:
@@ -124,7 +120,7 @@ def save_rule(engine: Engine, account: str, event_id: str, data: RuleInput) -> d
         count = row["count"] if row else 0
         if data.enabled and count >= data.cap:
             raise WorkError(422, "已达到累计次数上限")
-        values = data.model_dump(exclude={"verified", "expected_version"})
+        values = data.model_dump(exclude={"expected_version"})
         values.update(
             account=account,
             version=version + 1,

@@ -10,8 +10,11 @@ def load_local_config() -> None:
     if not path.is_file():
         return
     allowed = {
+        "TODO_STORAGE_ENCRYPTION_KEY",
         "TODO_UAIAPI_KEY",
         "TODO_AI_MODEL",
+        "TODO_VISION_MODEL",
+        "TODO_VISION_API_KEY",
         "TODO_FEISHU_CLI_EXE",
         "TODO_DATABASE_URL",
         "TODO_DB_HOST",
@@ -21,6 +24,17 @@ def load_local_config() -> None:
         "TODO_DB_SSLMODE",
         "DB_PASSWORD",
         "db_password",
+        "TODO_MEMORY_ENABLED",
+        "TODO_EMBEDDING_URL",
+        "TODO_EMBEDDING_MODEL",
+        "TODO_EMBEDDING_KEY",
+        "TODO_EMBEDDING_DIMENSIONS",
+        "TODO_EMBEDDING_REVISION",
+        "TODO_EMBEDDING_CONSENT",
+        "TODO_EMBEDDING_SOURCE_CONSENT",
+        "EMBEDDING_BASE_URL",
+        "EMBEDDING_MODEL",
+        "EMBEDDING_API_KEY",
     }
     for line in path.read_text(encoding="utf-8-sig").splitlines():
         name, separator, value = line.strip().partition("=")

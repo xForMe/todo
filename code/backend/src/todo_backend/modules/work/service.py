@@ -25,7 +25,7 @@ def write_item(
     engine: Engine, account: str, data: WriteInput, item_id: str | None = None
 ) -> ItemOutput:
     """Apply one explicit mutation once, then query its committed result."""
-    values = data.model_dump(exclude={"operation_id", "expected_version"})
+    values = data.model_dump(exclude={"operation_id", "expected_version", "plan_change_reason"})
     fingerprint = json.dumps(
         {"target": item_id, "body": data.model_dump(mode="json")},
         sort_keys=True,
@@ -65,6 +65,9 @@ def write_item(
                         raise WorkError(422, "不能更改归属或类型")
                     if current.version != data.expected_version:
                         raise WorkError(409, "内容已变化，请刷新后编辑")
+                    from todo_backend.modules.work.plan_history import record
+
+                    record(conn, account, current, data)
                     if data.type == "event":
                         from todo_backend.modules.work.event_structure import guard_status
 
@@ -93,7 +96,10 @@ def write_item(
                         )
                         if changed.rowcount != 1:
                             raise WorkError(409, "内容已变化，请刷新后编辑")
-                        if data.type == "event":
+                        if data.type == "event" and any(
+                            getattr(current, key) != values[key]
+                            for key in ("name", "description", "owner", "status")
+                        ):
                             from todo_backend.modules.sources.follow import rules
 
                             conn.execute(
@@ -111,6 +117,12 @@ def write_item(
                     conn.execute(
                         insert(items).values(id=result_id, account=account, version=1, **values)
                     )
+                    if data.type in ("thing", "event"):
+                        from todo_backend.modules.work.plan_history import initialize
+
+                        initialize(
+                            conn, account, ItemOutput(id=result_id, version=1, **values), False
+                        )
                 conn.execute(
                     insert(operations).values(
                         account=account, id=op, fingerprint=fingerprint, item_id=result_id

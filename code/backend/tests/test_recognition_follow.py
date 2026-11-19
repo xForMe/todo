@@ -73,13 +73,15 @@ def test_recognition_and_reminder_boundaries(
             "at": "09:00",
             "cap": 2,
             "enabled": True,
-            "verified": False,
             "event_version": saved["version"],
         }
         path = "/api/sources/follow/" + saved["id"]
-        assert client.post(path, json=rule).status_code == 422
-        rule["verified"] = True
-        assert client.post(path, json=rule).status_code == 200
+        assert client.post(path, json={**rule, "recipient": ""}).status_code == 422
+        assert client.post(path, json={**rule, "event_version": 0}).status_code == 409
+        response = client.post(path, json=rule)
+        assert response.status_code == 200, response.text
+        assert response.json()["enabled"] is True
+        assert client.get("/api/sources/follow").json()[0]["recipient"] == "ou_test"
         with app.state.engine.begin() as conn:
             conn.execute(update(rules).values(next_run=0))
         sent = []

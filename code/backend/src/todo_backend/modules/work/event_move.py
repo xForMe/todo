@@ -11,7 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from todo_backend.modules.sources.follow import attempts, rules
 from todo_backend.modules.sources.repository import sources, suggestions
-from todo_backend.modules.work.event_repository import branches, links, receipts
+from todo_backend.modules.work.event_repository import branches, links, predecessors, receipts
 from todo_backend.modules.work.event_structure import descendants, event, receipt
 from todo_backend.modules.work.repository import deletions, items, read_item
 from todo_backend.modules.work.service import WorkError
@@ -54,6 +54,24 @@ def preview(conn: Connection, account: str, event_id: str, target_id: str) -> di
     relations = list(conn.execute(select(links).where(links.c.account == account)).mappings())
     if any((r["source"] in moved) != (r["target"] in moved) for r in relations):
         raise WorkError(409, "存在与其他事件的关联，请先在事件详情中移除跨迁移范围的关联")
+    visible_ids = {r["id"] for r in rows}
+    dependencies = list(
+        conn.execute(
+            select(predecessors)
+            .where(
+                predecessors.c.account == account,
+                or_(predecessors.c.event_id.in_(moved), predecessors.c.predecessor_id.in_(moved)),
+            )
+            .order_by(predecessors.c.event_id, predecessors.c.predecessor_id)
+        ).mappings()
+    )
+    if any(
+        r["event_id"] in visible_ids
+        and r["predecessor_id"] in visible_ids
+        and (r["event_id"] in moved) != (r["predecessor_id"] in moved)
+        for r in dependencies
+    ):
+        raise WorkError(409, "迁移会分开前置与后续事件，请先调整跨迁移范围的前置关系")
     documents = list(
         conn.execute(
             select(sources).where(sources.c.account == account, sources.c.context.in_(moved))
@@ -96,6 +114,7 @@ def preview(conn: Connection, account: str, event_id: str, target_id: str) -> di
                 )
                 for group in groups
             ],
+            [dict(r) for r in dependencies],
         ],
         sort_keys=True,
         ensure_ascii=False,

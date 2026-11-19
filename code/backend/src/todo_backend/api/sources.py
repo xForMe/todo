@@ -8,6 +8,7 @@ from todo_backend.api.work import Identity
 from todo_backend.integrations.ai.client import Proposal
 from todo_backend.modules.sources.discarding import discard_message
 from todo_backend.modules.sources.follow import RuleInput, list_rules, save_rule
+from todo_backend.modules.sources.people import find_people
 from todo_backend.modules.sources.placement import Placement
 from todo_backend.modules.sources.recognition import resolve_proposal
 from todo_backend.modules.sources.recovery import manual_message, retry_message, unmatched_messages
@@ -158,5 +159,16 @@ def put_follow(
     """Persist explicit event-specific sending consent."""
     try:
         return save_rule(request.app.state.engine, identity, event_id, data)
+    except WorkError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
+
+
+@router.get("/follow-people")
+def get_follow_people(
+    request: Request, identity: Identity, event_id: str, query: str = "", saved: bool = False
+) -> dict[str, object]:
+    """Read candidate names without granting sending consent."""
+    try:
+        return find_people(request.app.state.engine, identity, event_id, query, saved)
     except WorkError as exc:
         raise HTTPException(exc.status, exc.message) from exc

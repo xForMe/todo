@@ -14,12 +14,6 @@ class ReadFailure(Exception):
 
 def read_source(kind: str, address: str) -> str:
     """Read a document or one bounded chat page without shell execution."""
-    default = (
-        Path(os.environ.get("APPDATA", "")) / "npm/node_modules/@larksuite/cli/bin/lark-cli.exe"
-    )
-    exe = Path(os.environ.get("TODO_FEISHU_CLI_EXE", str(default)))
-    if not exe.is_absolute() or not exe.is_file():
-        raise ReadFailure("未配置可信的飞书 CLI 可执行文件")
     args = (
         ["docs", "+fetch", "--as", "user", "--doc", address]
         if kind == "document"
@@ -35,6 +29,37 @@ def read_source(kind: str, address: str) -> str:
             "--no-reactions",
         ]
     )
+    raw = run_read_command(args)
+    try:
+        payload = json.loads(raw)
+        if not isinstance(payload, dict) or payload.get("ok") is not True:
+            raise ValueError("invalid envelope")
+        data = payload["data"]
+        if not isinstance(data, dict):
+            raise ValueError("invalid data")
+        if kind == "document":
+            content = data["document"]["content"]
+            if not isinstance(content, str):
+                raise ValueError("invalid document")
+            return content
+        messages = data["messages"]
+        if not isinstance(messages, list):
+            raise ValueError("invalid messages")
+        return (
+            "部分结果：仅当前最新一页\n" if data.get("has_more") else "当前页完整\n"
+        ) + json.dumps(messages, ensure_ascii=False, indent=2)
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ReadFailure("飞书返回结构无法识别") from exc
+
+
+def run_read_command(args: list[str]) -> bytes:
+    """Execute a fixed read-only CLI command with timeout and output bounds."""
+    default = (
+        Path(os.environ.get("APPDATA", "")) / "npm/node_modules/@larksuite/cli/bin/lark-cli.exe"
+    )
+    exe = Path(os.environ.get("TODO_FEISHU_CLI_EXE", str(default)))
+    if not exe.is_absolute() or not exe.is_file():
+        raise ReadFailure("未配置可信的飞书 CLI 可执行文件")
     env = {
         **os.environ,
         "LARKSUITE_CLI_NO_UPDATE_NOTIFIER": "1",
@@ -64,23 +89,4 @@ def read_source(kind: str, address: str) -> str:
         raw = output.read(2_000_001)
     if len(raw) > 2_000_000:
         raise ReadFailure("内容超过读取上限")
-    try:
-        payload = json.loads(raw)
-        if not isinstance(payload, dict) or payload.get("ok") is not True:
-            raise ValueError("invalid envelope")
-        data = payload["data"]
-        if not isinstance(data, dict):
-            raise ValueError("invalid data")
-        if kind == "document":
-            content = data["document"]["content"]
-            if not isinstance(content, str):
-                raise ValueError("invalid document")
-            return content
-        messages = data["messages"]
-        if not isinstance(messages, list):
-            raise ValueError("invalid messages")
-        return (
-            "部分结果：仅当前最新一页\n" if data.get("has_more") else "当前页完整\n"
-        ) + json.dumps(messages, ensure_ascii=False, indent=2)
-    except (ValueError, KeyError, TypeError) as exc:
-        raise ReadFailure("飞书返回结构无法识别") from exc
+    return raw

@@ -43,6 +43,7 @@ class WriteInput(ItemInput):
     """Mutation envelope with replay and concurrency controls."""
 
     operation_id: UUID
+    plan_change_reason: str = Field(default="", max_length=500)
     expected_version: int | None = Field(default=None, ge=1)
 
 

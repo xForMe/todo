@@ -33,8 +33,8 @@ openForm = function(type, id) {
   moveEntry.hidden = !id || type !== 'event';
 };
 const moveBaseEvent = openEvent;
-openEvent = async function(id, mode = 'detail') {
-  await moveBaseEvent(id, mode);
+openEvent = async function(id, mode = 'detail', showPredecessorSettings = false) {
+  await moveBaseEvent(id, mode, showPredecessorSettings);
   if (mode !== 'detail' || !eventDialog.open || eventContext !== id || eventPending || !$('#eventContent .actions')) return;
   if ($('#eventMoveEntry')) return;
   const entry = document.createElement('button');

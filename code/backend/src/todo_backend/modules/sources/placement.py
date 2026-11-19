@@ -30,6 +30,10 @@ def create_work(conn: Connection, account: str, value: ItemInput) -> str:
     conn.execute(
         insert(items).values(id=identifier, account=account, version=1, **value.model_dump())
     )
+    if value.type in ("thing", "event"):
+        from todo_backend.modules.work.plan_history import initialize
+
+        initialize(conn, account, ItemOutput(id=identifier, version=1, **value.model_dump()), False)
     return identifier
 
 

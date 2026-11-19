@@ -1,6 +1,15 @@
 """Event trees, independent links and durable operation receipts."""
 
-from sqlalchemy import Column, ForeignKey, String, Table, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    ForeignKey,
+    Index,
+    String,
+    Table,
+    Text,
+    UniqueConstraint,
+)
 
 from todo_backend.modules.work.repository import metadata
 
@@ -20,6 +29,15 @@ links = Table(
     Column("target", String(36), ForeignKey("work_items.id"), nullable=False),
     Column("kind", String(16), nullable=False),
     UniqueConstraint("source", "target"),
+)
+predecessors = Table(
+    "event_predecessors",
+    metadata,
+    Column("event_id", String(36), ForeignKey("work_items.id"), primary_key=True),
+    Column("predecessor_id", String(36), ForeignKey("work_items.id"), primary_key=True),
+    Column("account", String(120), nullable=False),
+    CheckConstraint("event_id <> predecessor_id", name="different_events"),
+    Index("ix_event_predecessors_account_target", "account", "predecessor_id"),
 )
 receipts = Table(
     "event_operations",

@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.engine import Engine
 
 from todo_backend.integrations.ai.client import AIError, call_json
+from todo_backend.modules import model_catalog
 from todo_backend.modules.work.event_structure import descendants, event, require_open, state
 from todo_backend.modules.work.repository import items
 from todo_backend.modules.work.service import WorkError
@@ -49,6 +50,7 @@ def generate(engine: Engine, account: str, event_id: str, data: GenerateInput) -
         snapshot = state(conn, account, event_id)["snapshot"]
         if snapshot != data.snapshot:
             raise WorkError(409, "上下文已变化，请重新打开")
+        model_override = model_catalog.override(conn, account, "event_decomposition")
         existing = [
             dict(r)
             for r in conn.execute(
@@ -69,7 +71,9 @@ def generate(engine: Engine, account: str, event_id: str, data: GenerateInput) -
         "不要猜测人员、日期或声称已完成。信息不足返回空 suggestions。"
     )
     try:
-        result = Candidates.model_validate(call_json(prompt, data.instructions, context))
+        result = Candidates.model_validate(
+            call_json(prompt, data.instructions, context, *model_override)
+        )
     except (AIError, ValidationError) as exc:
         raise WorkError(502, "AI 拆分建议生成失败；可手动重试或手动拆分") from exc
     with engine.begin() as conn:

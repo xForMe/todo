@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.datastructures import Headers
@@ -17,6 +18,11 @@ from starlette.types import Scope
 
 from todo_backend.api.events import router as events_router
 from todo_backend.api.health import router as health_router
+from todo_backend.api.image_limits import ImageBodyLimit, safe_validation
+from todo_backend.api.images import router as images_router
+from todo_backend.api.matter_decomposition import router as matter_decomposition_router
+from todo_backend.api.memory import router as memory_router
+from todo_backend.api.model_catalog import router as model_catalog_router
 from todo_backend.api.sources import router as sources_router
 from todo_backend.api.work import database_error
 from todo_backend.api.work import router as work_router
@@ -63,11 +69,17 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="To Do", version="0.2.0", lifespan=lifespan)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "[::1]"])
+    app.add_middleware(ImageBodyLimit)
     app.include_router(health_router)
+    app.include_router(images_router)
+    app.include_router(model_catalog_router)
     app.include_router(work_router)
     app.include_router(events_router)
+    app.include_router(matter_decomposition_router)
     app.include_router(sources_router)
+    app.include_router(memory_router)
     app.add_exception_handler(SQLAlchemyError, database_error)
+    app.add_exception_handler(RequestValidationError, safe_validation)
     frontend = Path(__file__).resolve().parents[3] / "frontend"
     app.mount("/", FreshStaticFiles(directory=frontend, html=True), name="frontend")
     return app

@@ -10,14 +10,20 @@ from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import SQLAlchemyError
 
 from todo_backend.integrations.ai.client import AIError
-from todo_backend.integrations.ai.follow_up import Decision, grounded_date, recognize_follow_up
+from todo_backend.integrations.ai.follow_up import (
+    Decision,
+    grounded_completion,
+    grounded_date,
+    recognize_follow_up,
+)
 from todo_backend.modules import model_catalog
 from todo_backend.modules.images.service import ready_images
 from todo_backend.modules.work.daily_review import beijing_now, reviews
+from todo_backend.modules.work.event_structure import guard_status
 from todo_backend.modules.work.plan_history import record
 from todo_backend.modules.work.repository import deletions, items, metadata, read_item
 from todo_backend.modules.work.schemas import ItemOutput, WriteInput
-from todo_backend.modules.work.service import WorkError
+from todo_backend.modules.work.service import WorkError, pause_event_reminders
 
 followups = Table(
     "action_followups",
@@ -59,6 +65,7 @@ class FollowOutput(BaseModel):
     new_end: str
     revision: int
     item_version: int
+    completed: bool = False
     image_ids: list[str] = Field(default_factory=list)
 
 
@@ -160,12 +167,33 @@ def guard(current: ItemOutput, rev: int, data: FollowInput) -> None:
         raise WorkError(409, "事项或跟进已变化，请重新读取核对；正文已保留")
 
 
+def completion(
+    conn: Connection, account: str, decision: Decision, data: FollowInput, current: ItemOutput
+) -> tuple[bool, str]:
+    """Allow only a grounded completion that passes the normal event status guard."""
+    if (
+        decision.target_id != current.id
+        or decision.end
+        or decision.date_text
+        or decision.reason
+        or not grounded_completion(data.content, decision.evidence)
+    ):
+        return False, "完成依据不足或对象不明确，状态未变更"
+    try:
+        guard_status(conn, account, current.id, "completed")
+    except WorkError as exc:
+        if exc.status != 409:
+            raise
+        return False, "状态未变更；" + exc.message
+    return True, "已标记为完成；计划日期未变更"
+
+
 def plan(decision: Decision, data: FollowInput, current: ItemOutput) -> tuple[str, str]:
     """Independently check source evidence, scope and dates before allowing a mutation."""
     if decision.kind != "delay":
         return "", {
             "none": "",
-            "unclear": "延期信息不明确，计划未变更",
+            "unclear": "延期或完成信息不明确，计划和状态未变更",
             "other": "提到其他节点，请到对应事项跟进；当前计划未变更",
         }[decision.kind]
     if (
@@ -250,9 +278,13 @@ def save(engine: Engine, account: str, item_id: str, data: FollowInput) -> Follo
                     ready_images(conn, account, item_id, image_ids, lock=True)
                 if latest_context != context:
                     raise WorkError(409, "识别期间事项归属或内容已变化，请重新核对")
-                end, note = plan(decision, data, current)
+                end, completed = "", False
                 if data.skip_ai:
-                    note = "仅保存跟进，尚未识别，计划未变更"
+                    note = "仅保存跟进，尚未识别，计划和状态未变更"
+                elif decision.kind == "complete":
+                    completed, note = completion(conn, account, decision, data, current)
+                else:
+                    end, note = plan(decision, data, current)
                 if end:
                     write = WriteInput.model_validate(
                         {
@@ -264,6 +296,8 @@ def save(engine: Engine, account: str, item_id: str, data: FollowInput) -> Follo
                         }
                     )
                     record(conn, account, current, write)
+                if end or completed:
+                    changes = {"status": "completed"} if completed else {"planEnd": end}
                     changed = conn.execute(
                         update(items)
                         .where(
@@ -271,10 +305,12 @@ def save(engine: Engine, account: str, item_id: str, data: FollowInput) -> Follo
                             items.c.account == account,
                             items.c.version == current.version,
                         )
-                        .values(planEnd=end, version=current.version + 1)
+                        .values(**changes, version=current.version + 1)
                     )
                     if changed.rowcount != 1:
-                        raise WorkError(409, "计划已变化，请重新核对")
+                        raise WorkError(409, "事项已变化，请重新核对")
+                    if completed:
+                        pause_event_reminders(conn, account, item_id)
                 result = FollowOutput(
                     id=op,
                     item_id=item_id,
@@ -286,7 +322,8 @@ def save(engine: Engine, account: str, item_id: str, data: FollowInput) -> Follo
                     old_end=current.planEnd,
                     new_end=end or current.planEnd,
                     revision=rev + 1,
-                    item_version=current.version + bool(end),
+                    item_version=current.version + (bool(end) or completed),
+                    completed=completed,
                 )
                 where = (
                     reviews.c.account == account,

@@ -4,8 +4,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const root = path.resolve(__dirname, '../frontend');
-const output = path.resolve(__dirname, '../../runtime/image-actions-ui');
+const root = path.resolve(__dirname, '../frontend-react/public');
+const react = true;
+const bundle = '/dist/workbench-react.js';
+const output = path.resolve(__dirname, '../../runtime', `image-actions-ui${react ? '-react' : ''}`);
 const base = 'http://127.0.0.1:18920';
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ1sAAAAASUVORK5CYII=', 'base64');
 const item = (id, type, parent) => ({
@@ -14,11 +16,13 @@ const item = (id, type, parent) => ({
 });
 
 async function main() {
+  fs.accessSync(path.join(root, bundle.slice(1)), fs.constants.R_OK);
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   fs.mkdirSync(output, { recursive: true });
   try {
-    const page = await browser.newPage();
+    const page = await browser.newPage({ serviceWorkers: 'block' });
     const errors = [];
+    await page.context().routeWebSocket('**/*', socket => { errors.push(`Unexpected WebSocket: ${socket.url()}`); socket.close(); });
     const writes = [];
     const attachments = new Map();
     const items = [item('g', 'goal', null), item('m', 'module', 'g'), item('t', 'thing', 'm'), item('e', 'event', 't')];
@@ -29,11 +33,12 @@ async function main() {
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', async route => {
       const request = route.request();
-      const { pathname } = new URL(request.url());
+      const { origin, pathname } = new URL(request.url());
+      if (origin !== base) { errors.push(`Unexpected origin: ${request.url()}`); return route.abort(); }
       const method = request.method();
       if (pathname === '/image.png') return route.fulfill({ body: png, contentType: 'image/png' });
       if (!pathname.startsWith('/api/')) {
-        const name = path.basename(pathname === '/' ? 'index.html' : pathname);
+        const name = react && pathname === bundle ? bundle.slice(1) : path.basename(pathname === '/' ? 'index.html' : pathname);
         const file = path.join(root, name);
         if (!fs.existsSync(file)) return route.fulfill({ status: 404 });
         const contentType = name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : 'text/html';
@@ -104,7 +109,8 @@ async function main() {
       }, [...png]);
     }
 
-    await page.goto(base);
+    await page.goto(`${base}/`);
+    if (react) await page.locator('#imageDrawer[data-react-owned]').waitFor({ state: 'attached' });
     await page.getByRole('button', { name: '目标与事情', exact: true }).click();
     await page.getByRole('button', { name: '事情图片', exact: true }).click();
     await page.waitForFunction(() => !document.querySelector('#imagePaste').disabled);

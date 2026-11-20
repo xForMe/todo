@@ -1,6 +1,9 @@
 @echo off
+setlocal
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start.ps1" %*
-if errorlevel 1 (
+set "result=%errorlevel%"
+if not "%result%"=="0" if "%~1"=="" (
   echo.
   pause
 )
+exit /b %result%

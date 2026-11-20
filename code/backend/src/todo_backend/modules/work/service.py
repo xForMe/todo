@@ -4,7 +4,7 @@ import json
 from uuid import uuid4
 
 from sqlalchemy import insert, select, update
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from todo_backend.modules.work.repository import items, operations, read_item
@@ -19,6 +19,17 @@ class WorkError(Exception):
         self.status = status
         self.message = message
         super().__init__(message)
+
+
+def pause_event_reminders(conn: Connection, account: str, item_id: str) -> None:
+    """Apply the existing reminder safety rule when an event changes."""
+    from todo_backend.modules.sources.follow import rules
+
+    conn.execute(
+        update(rules)
+        .where(rules.c.event_id == item_id, rules.c.account == account)
+        .values(enabled=False, status="事件变化，已暂停", version=rules.c.version + 1)
+    )
 
 
 def write_item(
@@ -100,17 +111,7 @@ def write_item(
                             getattr(current, key) != values[key]
                             for key in ("name", "description", "owner", "status")
                         ):
-                            from todo_backend.modules.sources.follow import rules
-
-                            conn.execute(
-                                update(rules)
-                                .where(rules.c.event_id == item_id, rules.c.account == account)
-                                .values(
-                                    enabled=False,
-                                    status="事件变化，已暂停",
-                                    version=rules.c.version + 1,
-                                )
-                            )
+                            pause_event_reminders(conn, account, item_id)
                 else:
                     if data.expected_version is not None:
                         raise WorkError(422, "创建时不能指定版本")

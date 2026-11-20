@@ -5,7 +5,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const output = path.resolve(__dirname, '../../runtime/module-choices-ui');
-const frontend = path.resolve(__dirname, '../frontend');
+const frontend = path.resolve(__dirname, '../frontend-react/public');
+const origin = 'http://127.0.0.1:18886';
+const bundle = '/dist/workbench-react.js';
 const item = (id, type, parent, name) => ({ id, type, parent, name, status: 'notStarted', version: 1 });
 const longName = '跨部门协调与长周期交付计划'.repeat(7);
 const items = [
@@ -24,6 +26,7 @@ const items = [
 ];
 
 async function verify() {
+  fs.accessSync(path.join(frontend, bundle.slice(1)), fs.constants.R_OK);
   fs.mkdirSync(output, { recursive: true });
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   try {
@@ -34,6 +37,7 @@ async function verify() {
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', async route => {
       const url = new URL(route.request().url());
+      if (url.origin !== origin) return route.abort();
       if (url.pathname.startsWith('/api/')) {
         if (route.request().method() !== 'GET') {
           writes.push(url.pathname);
@@ -45,25 +49,35 @@ async function verify() {
         const priorities = { week: '2026-11-16', items: [] };
         const snapshot = { items: currentItems, priorities, attention: [], branches: [], links: [], today: '2026-11-19' };
         const data = { '/api/session': {}, '/api/items': currentItems, '/api/workbench': snapshot, '/api/priorities': priorities };
+        const event = url.pathname.match(/^\/api\/events\/([^/]+)\/structure$/);
+        if (event) {
+          const parent = currentItems.find(item => item.id === event[1])?.parent;
+          return route.fulfill({ json: { branches: [], links: [], events: currentItems.filter(item => item.type === 'event' && item.parent === parent) } });
+        }
         return route.fulfill({ json: data[url.pathname] || [] });
       }
-      const name = path.basename(url.pathname === '/' ? 'index.html' : url.pathname);
+      const name = url.pathname === bundle ? bundle.slice(1) : path.basename(url.pathname === '/' ? 'index.html' : url.pathname);
       const file = path.join(frontend, name);
       if (!fs.existsSync(file)) return route.fulfill({ status: 404, body: '' });
       const types = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html' };
       return route.fulfill({ body: fs.readFileSync(file), contentType: types[path.extname(name)] });
     });
 
-    await page.goto('http://127.0.0.1:18886/');
+    await page.goto(`${origin}/`);
     await page.getByRole('button', { name: '目标与事情', exact: true }).click();
     await page.waitForFunction(() => wbSnapshot && !wbLoading);
-    const group = page.getByRole('group', { name: '模块', exact: true });
+    const work = page.locator('#workPage[data-selection-ui="react"]');
+    const group = work.getByRole('group', { name: '模块', exact: true });
+    const events = work.locator('#events[data-events-ui="react"]');
     const brand = group.getByRole('radio', { name: '品牌宣传' });
     const delivery = group.getByRole('radio', { name: '产品交付' });
     const goal = page.locator('#goalSelect');
     const edit = page.getByRole('button', { name: '编辑当前模块' });
     const create = page.getByRole('button', { name: '＋ 新建模块' });
     assert.ok(await brand.isChecked());
+    assert.ok(await brand.evaluate(node => Object.keys(node)
+      .some(key => key.startsWith('__reactFiber$') && node[key]?.stateNode === node)), 'React owns the module radio');
+    assert.equal(await work.locator('.toolbar').locator('[onclick], [onchange]').count(), 0);
 
     const widths = [1440, 1024, 768, 601, 600, 375, 320];
     for (const width of widths) {
@@ -95,14 +109,15 @@ async function verify() {
     assert.ok(await delivery.isChecked());
     assert.match(await page.locator('#crumb').innerText(), /产品交付$/);
     assert.deepEqual(await page.locator('#things .thing strong').allTextContents(), ['交付清单']);
-    assert.match(await page.locator('#events').innerText(), /核对交付节点/);
+    await events.getByRole('button', { name: '核对交付节点', exact: true }).waitFor();
     await delivery.focus();
+    const generation = await page.evaluate(() => wbGeneration);
     await page.keyboard.press('ArrowLeft');
     await page.waitForFunction(() => document.activeElement?.value === 'm1');
     assert.ok(await brand.isChecked());
     assert.equal(await brand.locator('..').evaluate(label => getComputedStyle(label).outlineStyle), 'solid');
-    assert.match(await page.locator('#events').innerText(), /准备宣传材料/);
-    await page.waitForFunction(() => !wbLoading);
+    await page.waitForFunction(previous => !wbLoading && wbGeneration > previous, generation);
+    await events.getByRole('button', { name: '准备宣传材料', exact: true }).waitFor();
     assert.ok(await brand.evaluate(input => input === document.activeElement));
 
     await edit.click();

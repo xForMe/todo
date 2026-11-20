@@ -1,0 +1,14 @@
+{
+  "name": "todo-react-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": { "node": ">=22.12.0" },
+  "scripts": {
+    "build": "vite build",
+    "test": "npm run build && node test/default-entry.cjs && node test/workbench-parity.cjs && node test/workspace-selection.cjs && node test/work-editor.cjs && node test/event-drawer.cjs && node test/priority-drawer.cjs && node test/move-drawer.cjs && node test/delete-drawer.cjs && node test/source-drawer.cjs && node test/dsh-capture.cjs",
+    "test:acceptance": "npm test && node test/acceptance.cjs"
+  },
+  "dependencies": { "react": "19.3.1", "react-dom": "19.3.1" },
+  "devDependencies": { "playwright": "1.59.1", "vite": "8.3.8" }
+}

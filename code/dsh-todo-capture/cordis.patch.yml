@@ -1,0 +1,13 @@
+- insert:
+    - id: local-todo-capture-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: todo_capture
+        transport: streamable-http
+        url: http://127.0.0.1:8000/mcp
+        expandTemplates: true
+        headers:
+          Authorization: 'Bearer ${credential:TODO_DSH_CAPTURE_TOKEN}'
+        startupTimeoutMs: 12000
+        toolCallTimeoutMs: 150000
+        failOnStartupError: true

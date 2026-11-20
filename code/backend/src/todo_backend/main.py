@@ -16,6 +16,8 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import Response
 from starlette.types import Scope
 
+from todo_backend.api.dsh_capture import attach_mcp
+from todo_backend.api.dsh_capture import router as dsh_capture_router
 from todo_backend.api.events import router as events_router
 from todo_backend.api.health import router as health_router
 from todo_backend.api.image_limits import ImageBodyLimit, safe_validation
@@ -60,7 +62,8 @@ def create_app() -> FastAPI:
             else None
         )
         try:
-            yield
+            async with mcp.session_manager.run():
+                yield
         finally:
             stop.set()
             if reader is not None:
@@ -78,8 +81,10 @@ def create_app() -> FastAPI:
     app.include_router(matter_decomposition_router)
     app.include_router(sources_router)
     app.include_router(memory_router)
+    app.include_router(dsh_capture_router)
+    mcp = attach_mcp(app)
     app.add_exception_handler(SQLAlchemyError, database_error)
     app.add_exception_handler(RequestValidationError, safe_validation)
-    frontend = Path(__file__).resolve().parents[3] / "frontend"
+    frontend = Path(__file__).resolve().parents[3] / "frontend-react" / "public"
     app.mount("/", FreshStaticFiles(directory=frontend, html=True), name="frontend")
     return app

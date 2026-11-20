@@ -33,3 +33,11 @@ def test_frontend_assets_are_fresh() -> None:
     script = client.get(source_path).text
     assert "sourceContext=id||null" in script
     assert "id||selection.module" not in script
+
+
+def test_frontend_mount_does_not_expose_the_react_project() -> None:
+    """Serve the public tree without exposing build configuration or source files."""
+    client = TestClient(create_app(), base_url="http://127.0.0.1")
+    assert client.get("/").status_code == 200
+    for path in ("/package.json", "/vite.config.js", "/src/workbench-entry.jsx", "/README.md"):
+        assert client.get(path).status_code == 404

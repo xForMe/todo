@@ -35,7 +35,7 @@ def test_missing_postgresql_configuration_is_safe(monkeypatch: pytest.MonkeyPatc
     assert run_check() == 1
 
 
-@pytest.mark.parametrize("revision,expected", [("0023", 0), ("0022", 1), ("0001", 1)])
+@pytest.mark.parametrize("revision,expected", [("0025", 0), ("0024", 1), ("0023", 1), ("0001", 1)])
 def test_postgresql_checks_migration_revision(
     revision: str, expected: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:

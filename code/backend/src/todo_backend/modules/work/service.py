@@ -1,10 +1,10 @@
 """Transactional hierarchy, replay and optimistic concurrency rules."""
 
 import json
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import insert, select, update
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from todo_backend.modules.work.repository import items, operations, read_item
@@ -19,6 +19,17 @@ class WorkError(Exception):
         self.status = status
         self.message = message
         super().__init__(message)
+
+
+def pause_event_reminders(conn: Connection, account: str, item_id: str) -> None:
+    """Apply the existing reminder safety rule when an event changes."""
+    from todo_backend.modules.sources.follow import rules
+
+    conn.execute(
+        update(rules)
+        .where(rules.c.event_id == item_id, rules.c.account == account)
+        .values(enabled=False, status="事件变化，已暂停", version=rules.c.version + 1)
+    )
 
 
 def write_item(
@@ -100,17 +111,7 @@ def write_item(
                             getattr(current, key) != values[key]
                             for key in ("name", "description", "owner", "status")
                         ):
-                            from todo_backend.modules.sources.follow import rules
-
-                            conn.execute(
-                                update(rules)
-                                .where(rules.c.event_id == item_id, rules.c.account == account)
-                                .values(
-                                    enabled=False,
-                                    status="事件变化，已暂停",
-                                    version=rules.c.version + 1,
-                                )
-                            )
+                            pause_event_reminders(conn, account, item_id)
                 else:
                     if data.expected_version is not None:
                         raise WorkError(422, "创建时不能指定版本")
@@ -140,3 +141,35 @@ def write_item(
         return result
     except SQLAlchemyError as exc:
         raise WorkError(503, "结果待核对，请使用操作标识查询") from exc
+
+
+def complete_event(
+    engine: Engine, account: str, event_id: str, expected_version: int, operation_id: UUID
+) -> ItemOutput:
+    """Mark one existing event as complete after user approval."""
+    with engine.connect() as conn:
+        event = read_item(conn, account, event_id)
+
+    if event is None or event.type != "event":
+        raise WorkError(404, "事件不存在或不可操作")
+
+    if event.version != expected_version:
+        raise WorkError(409, "事件已变化，请刷新后重新确认")
+
+    if event.status == "completed":
+        return event  # 已完成就不再写，也不会反转状态
+
+    if event.status not in ("notStarted", "working"):
+        raise WorkError(409, "已取消的事件不能直接标记为已完成")
+
+    # WriteInput 是完整编辑表单：保留原字段，只替换状态。
+    fields = event.model_dump(exclude={"id", "version"})
+    fields.update(
+        status="completed",
+        expected_version=expected_version,
+        operation_id=operation_id,
+    )
+
+    data = WriteInput.model_validate(fields)
+
+    return write_item(engine, account, data, item_id=event_id)

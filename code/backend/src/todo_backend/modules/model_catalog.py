@@ -262,6 +262,18 @@ def override(conn: Connection, account: str, scene: str) -> tuple[ModelTarget] |
     return (_target(profile),)
 
 
+def capture_target(conn: Connection, account: str) -> ModelTarget:
+    """Select an explicitly configured account model, never the legacy default."""
+    try:
+        model_id = UUID(os.environ.get("TODO_DSH_CAPTURE_MODEL_ID", ""))
+    except ValueError as exc:
+        raise WorkError(503, "请先配置会话快速录入使用的模型") from exc
+    profile = _catalog(_row(conn, account)).find(model_id)
+    if profile is None:
+        raise WorkError(503, "会话快速录入的模型不可用，请检查配置")
+    return _target(profile)
+
+
 def check(engine: Engine, account: str, model_id: UUID) -> dict[str, str]:
     """Check a saved model using only its provider's model catalog."""
     with engine.connect() as conn:

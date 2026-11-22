@@ -50,7 +50,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--revision",
-        choices=("0015", "0016", "0017", "0018", "0019", "0020", "0022", "0023"),
+        choices=("0015", "0016", "0017", "0018", "0019", "0020", "0022", "0023", "0024", "0025"),
         default="0015",
     )
     args = parser.parse_args()
@@ -70,6 +70,8 @@ def main() -> None:
         "0020": ["image_action_runs", "image_action_sources"],
         "0022": ["vision_settings", "vision_settings_operations"],
         "0023": ["model_catalog_operations", "model_catalogs"],
+        "0024": ["dsh_capture_drafts"],
+        "0025": ["dsh_capture_confirmations"],
     }[target]
     if not args.apply:
         raise RuntimeError("Explicit --apply is required after stopping application writes")

@@ -406,6 +406,19 @@ def _unsafe(value: str, account: str, secrets: tuple[str, ...]) -> bool:
     )
 
 
+def validate_lookup_text(value: str, account: str, extra_secrets: tuple[str, ...] = ()) -> None:
+    """Reject recognizable credentials and invalid text before using lookup input."""
+    secrets = tuple(
+        secret for key in (*_SECRET_ENV, "TODO_DSH_DIRECT_TOKEN") if (secret := os.environ.get(key))
+    )
+    try:
+        value.encode("utf-8")
+    except UnicodeError as exc:
+        raise WorkError(422, "查找输入编码无效") from exc
+    if _unsafe(value, account, (*secrets, *extra_secrets)):
+        raise WorkError(422, "查找输入含敏感或无效内容，请移除后再提交")
+
+
 def _placement(
     conn: Connection,
     account: str,

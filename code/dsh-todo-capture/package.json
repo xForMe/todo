@@ -1,9 +1,10 @@
 {
   "name": "@local/todo-capture-mcp",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Capture To Do drafts from DeepSeek Harness over local MCP.",
-  "exports": { "./locale/*.json": "./locale/*.json", "./icon": "./icon.svg" },
-  "files": ["cordis.patch.yml", "locale/*.json", "README.md", "icon.svg"],
+  "type": "module",
+  "description": "Find To Do events and create or complete one after approval in Harness.",
+  "exports": { ".": "./index.js", "./locale/*.json": "./locale/*.json", "./icon": "./icon.svg" },
+  "files": ["index.js", "cordis.patch.yml", "locale/*.json", "README.md", "icon.svg"],
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
 }

@@ -1,7 +1,7 @@
-# 行间 · 会话草稿 / To Do capture
+# 行间 · 会话事件 / To Do events
 
-REQ-F-022 / TECH-029。通过本机 MCP 连接行间。请明确告诉 Harness 要整理哪段文字，例如「帮我记个待办：整理下周的验收清单」。已配置录入模型时，行间只将所选文本和必要的工作归属经该模型整理为草稿。
+REQ-F-022 / TECH-029、REQ-F-023 / TECH-030。查找已有事情与事件，并在 Harness 中核对后新建一条事件或将已有事件标为已完成。目标不明确时先选择，不跳转页面、不生成草稿、不自动新建上级。完成事件时，批准提示显示事件标题、完整归属和状态变更，并提示可能暂停该事件的催办。
 
-在行间顶栏「事件识别 → DSH 草稿」核对、编辑并确认创建正式事件。此插件不会扫描历史会话、不发送催办，也不会直接创建工作项。关闭插件不删除已有草稿。
+两种写入共用 Harness Desktop 的「允许一次」批准流程和独立的 `TODO_DSH_DIRECT_TOKEN` 签名凭据；查询使用 `TODO_DSH_CAPTURE_TOKEN`。没有可用的人工答复器、当前策略拒绝或凭据缺失时不写入。结果不明只查询原操作回执，不重新提交。插件只连接本机行间，不扫描会话历史。
 
-Connects to To Do on this machine. Ask Harness to draft a to-do from selected text, then review it under Event recognition → DSH drafts in To Do. Only the To Do page can confirm a formal event. The connection requires the local `TODO_DSH_CAPTURE_TOKEN` credential; generating new drafts also requires an explicitly selected capture model in To Do.
+Find an existing matter or event, then review and approve a single creation or completion in Harness. Both writes use the same one-time approval flow and require a separate local signing credential. If the outcome is uncertain, look up the original operation without resubmitting.

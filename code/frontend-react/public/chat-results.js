@@ -3,8 +3,7 @@ let chatResultState = 'pending', chatResultPage = 0;
 let chatReviewOrigin = false, unmatchedMessages = [], recoveryError = '', retryBusy = false;
 let recognitionReact = null, recognitionRendered = false;
 function mountRecognitionDrawer(mount) { recognitionReact = mount(recognitionDrawer); }
-const recognitionTabs = [['pending','待确认'],['linked','已关联进展'],['unmatched','未找到建议'],['dsh','DSH 草稿']];
-let dshCaptureRefresh = 0;
+const recognitionTabs = [['pending','待确认'],['linked','已关联进展'],['unmatched','未找到建议']];
 const recognitionEntryId = 'eventRecognitionTrigger';
 const recognitionDrawer = document.createElement('dialog');
 recognitionDrawer.id = 'eventRecognitionDrawer';
@@ -26,7 +25,6 @@ document.getElementById('suggestionDrawer').addEventListener('close', () => {
 function openChatResults(refresh = true) {
   if (!recognitionReact) return;
   recognitionRendered = true;
-  if (refresh && chatResultState === 'dsh') dshCaptureRefresh++;
   renderChatResults();
   if (!recognitionDrawer.open) recognitionDrawer.showModal();
   paintRecognitionEntry({expanded:true});
@@ -44,13 +42,12 @@ function renderChatResults() {
   recognitionReact({model:{state:chatResultState,last,page:chatResultPage,paged:list.length>10,
     loading:!aiLoaded,error:aiError,recoveryError,retryBusy,
     tabs:recognitionTabs.map(([state,label])=>({state,label,count:state==='unmatched'
-      ?unmatchedMessages.length:state==='dsh'?null:rows.filter(row=>row.state===state).length})),
-     dshRefresh:dshCaptureRefresh,
+      ?unmatchedMessages.length:rows.filter(row=>row.state===state).length})),
     unmatched:unmatchedMessages,
     suggestions:list.slice(chatResultPage*10,(chatResultPage+1)*10).map(row=>{
       const body=JSON.parse(row.body),path=wbPath(wbGet(row.thing_id));
       return {id:row.id,name:body.name,thingId:row.thing_id,path:path?.text||'',evidence:body.evidence,state:row.state};
-    })},actions:{close:()=>recognitionDrawer.close(),refresh:()=>{if(chatResultState==='dsh'){dshCaptureRefresh++;renderChatResults()}else refreshSuggestions()},dshApi:api,dshSaved:async id=>{if(!await loadWorkbench() || !wbGet(id))throw Error('行动清单尚未读回')},
+    })},actions:{close:()=>recognitionDrawer.close(),refresh:refreshSuggestions,
       tab:state=>{chatResultState=state;chatResultPage=0;renderChatResults()},
       page:delta=>{chatResultPage=Math.max(0,Math.min(last,chatResultPage+delta));renderChatResults()},
       review:reviewChatResult,locate:locateChatResult,manual:manualUnmatched,retry:retryUnmatched,discard:discardUnmatched,showTip,hideTip,

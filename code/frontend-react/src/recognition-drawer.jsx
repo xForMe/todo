@@ -1,5 +1,4 @@
 import React from 'react';
-import { DshCapturePanel } from './dsh-capture-panel.jsx';
 
 const paths = {
   refresh: 'M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 13 2M5 16a8 8 0 0 0 13 2',
@@ -61,11 +60,9 @@ function RecognitionResults({ model, actions }) {
     <div className="wbTabs dshRecognitionTabs" aria-label="事件识别状态">
       {tabs.map(tab => <button type="button" key={tab.state} aria-pressed={tab.state === state}
         className={tab.state === state ? 'active' : ''} onClick={() => actions.tab(tab.state)}>
-        {tab.label}{tab.count !== null && <> <span>{tab.count}</span></>}
+        {tab.label} <span>{tab.count}</span>
       </button>)}
     </div>
-    {state === 'dsh' ? <DshCapturePanel api={actions.dshApi} onSaved={actions.dshSaved}
-      refreshKey={model.dshRefresh} /> : <>
     {error ? <p className="chatScope error" role="alert">识别结果读取失败：{error}。请刷新重试。</p>
       : loading ? <p className="chatScope" role="status">正在读取识别结果…</p>
       : state === 'unmatched' ? (unmatched.length ? unmatched.map((message, index) =>
@@ -78,7 +75,6 @@ function RecognitionResults({ model, actions }) {
       <button type="button" disabled={page === 0} onClick={() => actions.page(-1)}>上一页</button>
       <button type="button" disabled={page === last} onClick={() => actions.page(1)}>下一页</button>
     </div>}
-    </>}
   </>;
 }
 
@@ -92,8 +88,8 @@ export function RecognitionDrawer({ model, actions }) {
       </div>
     </div>
     <div id="chatResults">
-      {model.state !== 'dsh' && model.recoveryError && <p className="error" role="alert">{model.recoveryError}</p>}
-      {model.state !== 'dsh' && model.retryBusy && <p role="status">正在处理，请稍候…</p>}
+      {model.recoveryError && <p className="error" role="alert">{model.recoveryError}</p>}
+      {model.retryBusy && <p role="status">正在处理，请稍候…</p>}
       <RecognitionResults model={model} actions={actions} />
     </div>
   </>;

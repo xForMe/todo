@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 
+from todo_backend.modules.dsh_direct import RECEIPT_PREFIX
 from todo_backend.modules.work import daily_follow_up
 from todo_backend.modules.work.attention import AttentionInput, save_attention
 from todo_backend.modules.work.daily_review import ReviewInput, ReviewOutput, receipt, save_review
@@ -202,7 +203,9 @@ def operation(operation_id: str, request: Request, identity: Identity) -> ItemOu
     with request.app.state.engine.connect() as conn:
         target = conn.execute(
             select(operations.c.item_id).where(
-                operations.c.account == identity, operations.c.id == operation_id
+                operations.c.account == identity,
+                operations.c.id == operation_id,
+                ~operations.c.fingerprint.startswith(RECEIPT_PREFIX),
             )
         ).scalar_one_or_none()
         result = read_item(conn, identity, target) if target else None

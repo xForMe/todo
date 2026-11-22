@@ -1,6 +1,14 @@
 # 代码入口
 
-## DSH 会话快速录入（MCP 草稿与 To Do 页面确认）
+## DSH 会话快速录入
+
+新版插件支持查找事情、定位事件和核对原操作回执。`todo_create_event` 与 `todo_complete_event` 共用 Harness Host 单次人工批准流程，可直接新建或完成一条正式事件，不生成草稿。写入使用与查询令牌独立的 `TODO_DSH_DIRECT_TOKEN`，同时配置在后端和 Harness 凭据库；新版后端与插件须配套部署，不需新增数据库迁移，不应变更会话审批策略。插件回归：`node --test code/dsh-todo-capture/test.cjs`（仓库根目录）。
+
+### 只读事件定位（REQ-F-023）
+
+在 To Do 后端设置 `TODO_DSH_EVENT_LOOKUP=1` 并重新启动后，现有本机 MCP 连接可发现 `locate_event(content, scope_hint="")`。默认关闭。用户明确提供项目、模块或事情时，可传入精确名称，或使用 `目标 / 模块 / 事情` 路径。没有明确范围时先查有效模块记忆；语义检索还需要独立的 `TODO_DSH_EVENT_EMBEDDING_CONSENT=1`、有效的模块向量索引和按当前 embedding profile 校准的距离阈值，见 [配置示例](../config/dsh-capture.env.example)。不会沿用飞书来源的 embedding 同意，也不会将事件正文发给 embedding。每轮最多返回 10 条事件摘要；无可靠范围不查事件，不写状态，无需迁移。
+
+### 历史部署（草稿与 To Do 页面确认）
 
 REQ-F-022 / PRO-022 / TECH-029 / TEST-026。FastAPI 同一进程提供仅本机 `/mcp`，只接受独立 bearer，工具仅生成和按原 UUID 查询草稿，不处理会话历史或创建正式事件。启用后，草稿可在 To Do 顶栏「事件识别 → DSH 草稿」核对、调整归属并确认创建。默认关闭；配置示例见 [dsh-capture.env.example](../config/dsh-capture.env.example)。显式选择当前账号模型后才允许把选定文本交给该模型；不使用飞书识别的默认配置。
 

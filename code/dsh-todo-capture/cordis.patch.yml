@@ -11,3 +11,5 @@
         startupTimeoutMs: 12000
         toolCallTimeoutMs: 150000
         failOnStartupError: true
+    - id: local-todo-direct-event
+      name: '@local/todo-capture-mcp'

@@ -1,4 +1,4 @@
-"""Exercise the local MCP draft flow with synthetic text and an isolated database."""
+"""Verify MCP discovery and historical draft services with isolated data."""
 
 import json
 from collections.abc import Iterator, Mapping
@@ -110,6 +110,8 @@ def test_native_auth_and_tool_discovery(
     monkeypatch.setenv("TODO_DSH_CAPTURE_TOKEN", TOKEN)
     assert rpc(client, "tools/list", {}, Authorization="").status_code == 401
     assert rpc(client, "tools/list", {}, Authorization="Bearer incorrect").status_code == 401
+    # Node's native fetch sends this without a browser origin or a fetch-site header.
+    assert rpc(client, "tools/list", {}, **{"Sec-Fetch-Mode": "cors"}).status_code == 200
     for headers in (
         {"Origin": "http://127.0.0.1"},
         {"Sec-Fetch-Site": "same-origin"},
@@ -135,10 +137,17 @@ def test_native_auth_and_tool_discovery(
         == "To Do Capture"
     )
     assert {tool["name"] for tool in rpc(client, "tools/list", {}).json()["result"]["tools"]} == {
+        "find_matters",
+        "get_recorded_event",
+        "get_event_to_complete",
+    }
+    for former_write_tool in (
         "prepare_capture",
         "get_capture",
-    }
-    assert call(client, "confirm_capture", {"confirmed": True}).get("isError") is True
+        "confirm_capture",
+        "event_completion",
+    ):
+        assert call(client, former_write_tool, {"confirmed": True}).get("isError") is True
     large = client.post(
         "/mcp", content=b"x" * 65537, headers={**HEADERS, "Content-Type": "application/json"}
     )
@@ -172,9 +181,11 @@ def test_prepare_read_replay_and_no_formal_writes(
         }
 
     monkeypatch.setattr(dsh_capture, "call_json", fake)
-    identifier = str(uuid4())
-    args = {"operation_id": identifier, "text": f"请记一下：{EVIDENCE}。额外备注不要复述。"}
-    result = value(call(client, "prepare_capture", args))
+    operation = uuid4()
+    identifier = str(operation)
+    text = f"请记一下：{EVIDENCE}。额外备注不要复述。"
+    db = engine(client)
+    result = dsh_capture.prepare(db, "personal", operation, text).model_dump(mode="json")
     candidate = cast(dict[str, object], result["candidate"])
     assert (candidate["title"], candidate["planned_date"], candidate["owner"]) == (
         "整理接口验收清单",
@@ -183,9 +194,11 @@ def test_prepare_read_replay_and_no_formal_writes(
     )
     assert cast(dict[str, object], candidate["path"])["matter_id"] == matter
     assert "额外备注不要复述" not in json.dumps(result, ensure_ascii=False)
-    assert value(call(client, "prepare_capture", args)) == result
-    assert value(call(client, "get_capture", {"operation_id": identifier})) == result
-    assert call(client, "prepare_capture", {**args, "text": "不同的提交"}).get("isError") is True
+    assert dsh_capture.prepare(db, "personal", operation, text).model_dump(mode="json") == result
+    assert dsh_capture.read(db, "personal", operation).model_dump(mode="json") == result
+    with pytest.raises(WorkError) as conflict:
+        dsh_capture.prepare(db, "personal", operation, "不同的提交")
+    assert conflict.value.status == 409
     assert calls == 1
     web_path = f"/api/dsh-captures/{identifier}"
     readback = client.get(web_path)
@@ -196,7 +209,9 @@ def test_prepare_read_replay_and_no_formal_writes(
     with monkeypatch.context() as other:
         other.setenv("TODO_OWNER_ID", "foreign-capture-account")
         assert client.get(web_path).status_code == 404
-        assert call(client, "get_capture", {"operation_id": identifier}).get("isError") is True
+        with pytest.raises(WorkError) as hidden:
+            dsh_capture.read(db, "foreign-capture-account", operation)
+        assert hidden.value.status == 404
     with engine(client).connect() as conn:
         assert conn.scalar(select(func.count()).select_from(items)) == 3
         assert conn.scalar(select(func.count()).select_from(suggestions)) == 0
@@ -205,10 +220,11 @@ def test_prepare_read_replay_and_no_formal_writes(
 def test_unassigned_failure_and_manual_recovery(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("TODO_DSH_CAPTURE_TOKEN", TOKEN)
     monkeypatch.setenv("TODO_DSH_CAPTURE_MODEL_ID", "")
-    args = {"operation_id": str(uuid4()), "text": "请记一下验收"}
-    assert call(client, "prepare_capture", args).get("isError") is True
+    db, operation = engine(client), uuid4()
+    text = "请记一下验收"
+    with pytest.raises(WorkError):
+        dsh_capture.prepare(db, "personal", operation, text)
     configure(client, monkeypatch)
     calls = 0
 
@@ -220,19 +236,21 @@ def test_unassigned_failure_and_manual_recovery(
         return {"candidate": None}
 
     monkeypatch.setattr(dsh_capture, "call_json", fake)
-    assert call(client, "prepare_capture", args).get("isError") is True
-    assert call(client, "get_capture", {"operation_id": args["operation_id"]}).get("isError")
+    with pytest.raises(WorkError):
+        dsh_capture.prepare(db, "personal", operation, text)
+    with pytest.raises(WorkError) as missing:
+        dsh_capture.read(db, "personal", operation)
+    assert missing.value.status == 404
     assert calls == 1
-    assert value(call(client, "prepare_capture", args))["candidate"] is None
+    assert dsh_capture.prepare(db, "personal", operation, text).candidate is None
     assert calls == 2
-    for text in ("   ", "字" * 4001):
-        assert call(client, "prepare_capture", {"operation_id": str(uuid4()), "text": text}).get(
-            "isError"
-        )
+    for invalid in ("   ", "字" * 4001):
+        with pytest.raises(WorkError):
+            dsh_capture.prepare(db, "personal", uuid4(), invalid)
     assert calls == 2
 
 
-def test_sensitive_text_and_internal_failures_are_not_echoed(
+def test_sensitive_raw_text_is_not_forwarded(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("TODO_DSH_CAPTURE_TOKEN", TOKEN)
@@ -245,13 +263,13 @@ def test_sensitive_text_and_internal_failures_are_not_echoed(
         raise RuntimeError("private provider response")
 
     monkeypatch.setattr(dsh_capture, "call_json", fake)
-    leaked_token = call(
-        client, "prepare_capture", {"operation_id": str(uuid4()), "text": f"记录 {TOKEN}"}
-    )
-    assert leaked_token.get("isError") and TOKEN not in str(leaked_token)
+    db = engine(client)
+    with pytest.raises(WorkError) as denied:
+        dsh_capture.prepare(db, "personal", uuid4(), f"记录 {TOKEN}")
+    assert TOKEN not in denied.value.message
     assert calls == 0
-    failure = call(client, "prepare_capture", {"operation_id": str(uuid4()), "text": "记录验收"})
-    assert failure.get("isError") and "private provider response" not in str(failure)
+    with pytest.raises(RuntimeError, match="private provider response"):
+        dsh_capture.prepare(db, "personal", uuid4(), "记录验收")
     assert calls == 1
 
 

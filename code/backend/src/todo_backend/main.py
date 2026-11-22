@@ -49,10 +49,10 @@ class FreshStaticFiles(StaticFiles):
 
 def create_app() -> FastAPI:
     """Create API and static frontend without implicit database migration."""
+    load_local_config()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        load_local_config()
         app.state.session_secret = secrets.token_urlsafe(32)
         app.state.engine = build_engine(database_url())
         stop = asyncio.Event()
